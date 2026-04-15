@@ -41,30 +41,24 @@ backup_mysql() {
 
     mkdir -p "$backup_dir"
 
-    # Read credentials from container environment
-    local root_pass
-    root_pass=$(docker exec "$container" env | grep MYSQL_ROOT_PASSWORD | cut -d= -f2-)
-
-    if [[ -z "$root_pass" ]]; then
-        log_error "[$project] Cannot read MYSQL_ROOT_PASSWORD from container $container"
-        return 1
-    fi
-
     local dump_file="$backup_dir/${project}_mysql_${DATE}.sql.gz"
 
     log_info "[$project] Backing up MySQL ($container) ..."
-    docker exec "$container" mysqldump \
-        -u root \
-        -p"$root_pass" \
-        --all-databases \
-        --single-transaction \
-        --routines \
-        --triggers \
-        2>/dev/null | gzip > "$dump_file"
+    # Run mysqldump inside container using its own env var — password never leaks to host ps aux
+    docker exec "$container" bash -c \
+        'mysqldump -u root -p"$MYSQL_ROOT_PASSWORD" --all-databases --single-transaction --routines --triggers 2>/dev/null' \
+        | gzip > "$dump_file"
+
+    # Verify backup integrity
+    if ! gzip -t "$dump_file" 2>/dev/null; then
+        log_error "[$project] Backup corrupted: $dump_file"
+        rm -f "$dump_file"
+        return 1
+    fi
 
     local size
     size=$(du -sh "$dump_file" | cut -f1)
-    log_info "[$project] MySQL backup done: $dump_file ($size)"
+    log_info "[$project] MySQL backup done: $dump_file ($size) [verified]"
 }
 
 # -----------------------------------------------------------
@@ -79,23 +73,16 @@ backup_mongo() {
 
     local dump_dir="$backup_dir/${project}_mongo_${DATE}"
 
-    # Read credentials from container environment
-    local mongo_user mongo_pass
-    mongo_user=$(docker exec "$container" env | grep MONGO_INITDB_ROOT_USERNAME | cut -d= -f2- || true)
-    mongo_pass=$(docker exec "$container" env | grep MONGO_INITDB_ROOT_PASSWORD | cut -d= -f2- || true)
-
     log_info "[$project] Backing up MongoDB ($container) ..."
 
-    if [[ -n "$mongo_user" && -n "$mongo_pass" ]]; then
-        docker exec "$container" mongodump \
-            --username="$mongo_user" \
-            --password="$mongo_pass" \
-            --authenticationDatabase=admin \
-            --out=/tmp/mongodump 2>/dev/null
-    else
-        docker exec "$container" mongodump \
-            --out=/tmp/mongodump 2>/dev/null
-    fi
+    # Run mongodump inside container using its own env vars — credentials never leak to host
+    docker exec "$container" bash -c '
+        if [ -n "$MONGO_INITDB_ROOT_USERNAME" ] && [ -n "$MONGO_INITDB_ROOT_PASSWORD" ]; then
+            mongodump --username="$MONGO_INITDB_ROOT_USERNAME" --password="$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase=admin --out=/tmp/mongodump 2>/dev/null
+        else
+            mongodump --out=/tmp/mongodump 2>/dev/null
+        fi
+    '
 
     # Copy dump from container to host and compress
     docker cp "$container":/tmp/mongodump "$dump_dir"
@@ -104,9 +91,16 @@ backup_mongo() {
     tar -czf "${dump_dir}.tar.gz" -C "$backup_dir" "$(basename "$dump_dir")"
     rm -rf "$dump_dir"
 
+    # Verify backup integrity
+    if ! tar -tzf "${dump_dir}.tar.gz" &>/dev/null; then
+        log_error "[$project] Backup corrupted: ${dump_dir}.tar.gz"
+        rm -f "${dump_dir}.tar.gz"
+        return 1
+    fi
+
     local size
     size=$(du -sh "${dump_dir}.tar.gz" | cut -f1)
-    log_info "[$project] MongoDB backup done: ${dump_dir}.tar.gz ($size)"
+    log_info "[$project] MongoDB backup done: ${dump_dir}.tar.gz ($size) [verified]"
 }
 
 # -----------------------------------------------------------

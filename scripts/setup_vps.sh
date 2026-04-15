@@ -43,6 +43,16 @@ check_root() {
 update_system() {
     log_section "Step 1: Updating & Upgrading System"
     apt update && apt upgrade -y
+
+    # Enable automatic security updates
+    if ! dpkg -l | grep -q unattended-upgrades; then
+        log_info "Installing unattended-upgrades for automatic security patches..."
+        apt install unattended-upgrades -y
+        dpkg-reconfigure -plow unattended-upgrades
+    else
+        log_warn "unattended-upgrades already installed."
+    fi
+
     log_info "System updated successfully."
 }
 
@@ -63,6 +73,36 @@ install_docker() {
     rm -f get-docker.sh
 
     log_info "Docker installed: $(docker --version)"
+
+    # Configure Docker log rotation
+    configure_docker_logging
+}
+
+# -----------------------------------------------------------
+# 2b. Configure Docker log rotation
+# -----------------------------------------------------------
+configure_docker_logging() {
+    local DAEMON_JSON="/etc/docker/daemon.json"
+
+    if [[ -f "$DAEMON_JSON" ]] && grep -q "max-size" "$DAEMON_JSON"; then
+        log_warn "Docker log rotation already configured. Skipping."
+        return 0
+    fi
+
+    log_info "Configuring Docker log rotation..."
+    mkdir -p /etc/docker
+    cat > "$DAEMON_JSON" <<'DOCKER_CONF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  }
+}
+DOCKER_CONF
+
+    systemctl restart docker
+    log_info "Docker log rotation set: max 10MB x 3 files per container."
 }
 
 # -----------------------------------------------------------
@@ -165,11 +205,54 @@ setup_firewall() {
     # App ports (8080, 3000, etc.) are bound to 127.0.0.1 only
     # so they don't need UFW rules — Nginx handles external traffic
 
+    # Set default policies
+    log_info "Setting default policies: deny incoming, allow outgoing..."
+    ufw default deny incoming
+    ufw default allow outgoing
+
     # Enable UFW (non-interactive)
     echo "y" | ufw enable
 
     ufw status verbose
     log_info "Firewall configured successfully."
+}
+
+# -----------------------------------------------------------
+# 6b. Install Fail2Ban (brute-force protection)
+# -----------------------------------------------------------
+install_fail2ban() {
+    log_section "Step 6b: Installing Fail2Ban"
+
+    if command -v fail2ban-server &>/dev/null; then
+        log_warn "Fail2Ban is already installed. Skipping."
+    else
+        apt install fail2ban -y
+    fi
+
+    # Create local config (won't be overwritten on updates)
+    local JAIL_LOCAL="/etc/fail2ban/jail.local"
+    if [[ -f "$JAIL_LOCAL" ]]; then
+        log_warn "$JAIL_LOCAL already exists. Skipping config."
+    else
+        cat > "$JAIL_LOCAL" <<'JAIL'
+[DEFAULT]
+bantime  = 1h
+findtime = 10m
+maxretry = 5
+
+[sshd]
+enabled = true
+port    = ssh
+filter  = sshd
+logpath = /var/log/auth.log
+maxretry = 3
+JAIL
+        log_info "Fail2Ban jail.local created (SSH: 3 retries, ban 1h)."
+    fi
+
+    systemctl enable fail2ban
+    systemctl restart fail2ban
+    log_info "Fail2Ban installed and running."
 }
 
 # -----------------------------------------------------------
@@ -374,6 +457,7 @@ main() {
     create_docker_network
     configure_swap
     setup_firewall
+    install_fail2ban
     install_nginx_certbot
     link_nginx_configs
     prepare_data_volumes

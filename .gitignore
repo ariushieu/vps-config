@@ -17,14 +17,27 @@ Thumbs.db
 credentials.json
 secrets.yaml
 
+# ===== SSH Keys =====
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+
 # ===== Logs =====
 *.log
 logs/
 *.out
 
+# ===== Backups =====
+*.sql
+*.sql.gz
+*.tar.gz
+
 # ===== Docker volumes (local data) =====
 mysql-data/
+mongo-data/
 data/
+docker-compose.override.yml
 
 # ===== Node (if any frontend) =====
 node_modules/
@@ -34,3 +47,5 @@ node_modules/
 *.tmp
 get-docker.sh
 my_vps_setup_history.txt
+
+.claude
