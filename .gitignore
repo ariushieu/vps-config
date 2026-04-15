@@ -1,0 +1,36 @@
+# ===== OS & Editor =====
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# ===== Environment & Secrets =====
+.env
+*.env
+!.env.example
+*.pem
+*.key
+*.crt
+credentials.json
+secrets.yaml
+
+# ===== Logs =====
+*.log
+logs/
+*.out
+
+# ===== Docker volumes (local data) =====
+mysql-data/
+data/
+
+# ===== Node (if any frontend) =====
+node_modules/
+
+# ===== Misc =====
+*.bak
+*.tmp
+get-docker.sh
+my_vps_setup_history.txt
