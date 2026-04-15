@@ -8,6 +8,7 @@
 vps-config/
 ├── scripts/
 │   ├── setup_vps.sh                  # Main VPS setup script
+│   ├── deploy_project.sh             # Interactive project deployment
 │   └── backup_db.sh                  # Daily database backup script
 ├── projects/
 │   ├── example-spring-boot/               # Example: Spring Boot + MySQL
@@ -58,37 +59,41 @@ This script will automatically:
 | 3 | Install Docker Compose | Via apt package manager |
 | 4 | Create Docker network | `backend-network` for inter-container communication |
 | 5 | Configure SWAP | 2GB swap file, swappiness = 10 |
-| 6 | Setup Firewall (UFW) | Allow ports: 22, 80, 443, 8080 |
-| 7 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
-| 8 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
-| 9 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
-| 10 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
+| 6 | Setup Firewall (UFW) | Default deny incoming, allow 22, 80, 443 |
+| 7 | Install Fail2Ban | SSH brute-force protection (3 retries → ban 1h) |
+| 8 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
+| 9 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
+| 10 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
+| 11 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
 
-### Step 3: Add a new project & deploy
+### Step 3: Deploy a new project (interactive)
 
 ```bash
-# 1. Copy a template
-cp -r projects/example-spring-boot projects/my-app    # Spring Boot + MySQL
-cp -r projects/example-node-app    projects/my-app    # Node.js + MongoDB
-
-# 2. Edit all 3 files
-nano projects/my-app/docker-compose.yml    # replace <...> placeholders
-nano projects/my-app/nginx.conf            # replace <your-domain.com>
-cp projects/my-app/.env.example projects/my-app/.env
-nano projects/my-app/.env                  # fill real credentials
-
-# 3. Re-run script to auto-link nginx + create data dirs
-sudo bash scripts/setup_vps.sh
-
-# 4. Start services
-cd projects/my-app && docker-compose up -d
-
-# 5. Get SSL
-sudo certbot --nginx -d your-domain.com
+sudo bash scripts/deploy_project.sh
 ```
 
-> **Note:** `example-*` folders are skipped automatically by the script.
-> Only real project folders get nginx-linked and data dirs created.
+The script will ask you:
+
+1. **Project name** — e.g. `mini-social-be`
+2. **Domain** — e.g. `api.qhieu.dev` (auto-checks DNS)
+3. **Template** — Spring Boot + MySQL or Node.js + MongoDB
+
+Then it automatically:
+- Copies template → `projects/mini-social-be/`
+- Replaces all placeholders (container names, data paths)
+- Generates `nginx.conf` with your real domain + security headers
+- Symlinks to Nginx sites-enabled + reloads
+- Runs `certbot --nginx -d api.qhieu.dev` for SSL
+- Creates `/opt/data/mini-social-be/` directories
+
+After that, just fill `.env` and start:
+
+```bash
+cd projects/mini-social-be
+cp .env.example .env
+nano .env                    # fill real credentials
+docker-compose up -d
+```
 
 ## Common Commands
 
@@ -169,22 +174,19 @@ docker exec <mongo-container> mongorestore /tmp/restore
 ## Adding a New Project
 
 ```bash
-# 1. Copy the template that matches your stack
-cp -r projects/example-spring-boot projects/my-new-app   # Spring Boot + MySQL
-cp -r projects/example-node-app    projects/my-new-app   # Node.js + MongoDB
+# Option 1: Interactive (recommended)
+sudo bash scripts/deploy_project.sh
 
-# 2. Edit all 3 files with your new project's config
+# Option 2: Manual
+cp -r projects/example-spring-boot projects/my-new-app
 nano projects/my-new-app/docker-compose.yml
-nano projects/my-new-app/.env.example
 nano projects/my-new-app/nginx.conf
-
-# 3. Run script to auto-link nginx + create /opt/data/ dirs
-sudo bash scripts/setup_vps.sh
-
-# 4. Deploy
+nano projects/my-new-app/.env.example
+sudo bash scripts/setup_vps.sh    # auto-link nginx + create data dirs
 cd projects/my-new-app
 cp .env.example .env && nano .env
 docker-compose up -d
+sudo certbot --nginx -d your-domain.com
 ```
 
 ## Data Storage
@@ -201,12 +203,19 @@ All persistent data is stored under `/opt/data/<project-name>/`:
 
 This makes backup, migration, and cleanup straightforward.
 
-## Security Notes
+## Security
 
-- Never commit `.env` files containing secrets
-- Always use strong passwords for MySQL
-- Keep your system updated: `sudo apt update && sudo apt upgrade -y`
-- SSL certificates auto-renew via Certbot's systemd timer
+This repo follows security best practices:
+
+- **Ports**: App & DB bind to `127.0.0.1` only — not reachable from internet
+- **Firewall**: UFW `default deny incoming`, only 22/80/443 open
+- **Fail2Ban**: SSH brute-force protection (3 retries → ban 1h)
+- **Nginx**: Security headers, rate limiting, `server_tokens off`
+- **Docker**: Log rotation (10MB x 3), resource limits (memory/cpu)
+- **Secrets**: `.env` files gitignored, never committed
+- **SSL**: Auto-renewed via Certbot systemd timer
+- **Updates**: `unattended-upgrades` for automatic security patches
+- **Backups**: Daily DB dump, integrity verified, 7-day retention
 
 ## License
 
