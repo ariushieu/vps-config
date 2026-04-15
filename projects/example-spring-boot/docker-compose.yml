@@ -31,7 +31,7 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
-      - mysql-data:/var/lib/mysql
+      - /opt/data/<your-project-name>/mysql:/var/lib/mysql    # e.g. /opt/data/mini-social-be/mysql
     ports:
       - "3306:3306"
     healthcheck:
@@ -41,10 +41,6 @@ services:
       retries: 5
     networks:
       - backend-network
-
-volumes:
-  mysql-data:
-    driver: local
 
 networks:
   backend-network:

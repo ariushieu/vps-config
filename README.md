@@ -43,7 +43,9 @@ cd vps-config
 
 ```bash
 chmod +x scripts/setup_vps.sh
-sudo bash scripts/setup_vps.sh
+sudo bash scripts/setup_vps.sh          # default: uses ~/vps-config
+# or specify repo path:
+sudo bash scripts/setup_vps.sh /opt/vps-config
 ```
 
 This script will automatically:
@@ -57,41 +59,34 @@ This script will automatically:
 | 5 | Configure SWAP | 2GB swap file, swappiness = 10 |
 | 6 | Setup Firewall (UFW) | Allow ports: 22, 80, 443, 8080 |
 | 7 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
+| 8 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
+| 9 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
 
-### Step 3: Deploy a project
-
-```bash
-cd projects/example-spring-boot/
-
-# 1. Edit docker-compose.yml - replace <...> placeholders with your values
-nano docker-compose.yml
-
-# 2. Create .env from template
-cp .env.example .env
-nano .env
-
-# 3. Start services
-docker-compose up -d
-```
-
-### Step 4: Configure Nginx + SSL
+### Step 3: Add a new project & deploy
 
 ```bash
-# 1. Edit nginx config - replace <your-domain.com> with your actual domain
-nano projects/example-spring-boot/nginx.conf
+# 1. Copy a template
+cp -r projects/example-spring-boot projects/my-app    # Spring Boot + MySQL
+cp -r projects/example-node-app    projects/my-app    # Node.js + MongoDB
 
-# 2. Copy to Nginx
-sudo cp projects/example-spring-boot/nginx.conf /etc/nginx/sites-available/example-spring-boot
+# 2. Edit all 3 files
+nano projects/my-app/docker-compose.yml    # replace <...> placeholders
+nano projects/my-app/nginx.conf            # replace <your-domain.com>
+cp projects/my-app/.env.example projects/my-app/.env
+nano projects/my-app/.env                  # fill real credentials
 
-# 3. Enable site
-sudo ln -s /etc/nginx/sites-available/example-spring-boot /etc/nginx/sites-enabled/
+# 3. Re-run script to auto-link nginx + create data dirs
+sudo bash scripts/setup_vps.sh
 
-# 4. Test and reload
-sudo nginx -t && sudo systemctl reload nginx
+# 4. Start services
+cd projects/my-app && docker-compose up -d
 
-# 5. Get SSL certificate
+# 5. Get SSL
 sudo certbot --nginx -d your-domain.com
 ```
+
+> **Note:** `example-*` folders are skipped automatically by the script.
+> Only real project folders get nginx-linked and data dirs created.
 
 ## Common Commands
 
@@ -99,12 +94,11 @@ sudo certbot --nginx -d your-domain.com
 # Check running containers
 docker ps
 
-# View app logs
-docker-compose -f projects/example-spring-boot/docker-compose.yml logs -f
+# View app logs (from project dir)
+cd projects/my-app && docker-compose logs -f
 
 # Restart services
-docker-compose -f projects/example-spring-boot/docker-compose.yml down
-docker-compose -f projects/example-spring-boot/docker-compose.yml up -d
+docker-compose down && docker-compose up -d
 
 # Check swap status
 free -h
@@ -114,25 +108,45 @@ sudo ufw status verbose
 
 # Renew SSL certificate
 sudo certbot renew --dry-run
+
+# Check data volumes
+ls -la /opt/data/
 ```
 
 ## Adding a New Project
 
 ```bash
 # 1. Copy the template that matches your stack
-cp -r projects/example-spring-boot   projects/my-new-app   # Spring Boot + MySQL
-cp -r projects/example-node-app projects/my-new-app   # Node.js + MongoDB
+cp -r projects/example-spring-boot projects/my-new-app   # Spring Boot + MySQL
+cp -r projects/example-node-app    projects/my-new-app   # Node.js + MongoDB
 
 # 2. Edit all 3 files with your new project's config
 nano projects/my-new-app/docker-compose.yml
 nano projects/my-new-app/.env.example
 nano projects/my-new-app/nginx.conf
 
-# 3. Deploy
+# 3. Run script to auto-link nginx + create /opt/data/ dirs
+sudo bash scripts/setup_vps.sh
+
+# 4. Deploy
 cd projects/my-new-app
 cp .env.example .env && nano .env
 docker-compose up -d
 ```
+
+## Data Storage
+
+All persistent data is stored under `/opt/data/<project-name>/`:
+
+```
+/opt/data/
+├── my-app/
+│   └── mysql/          # MySQL data files
+├── my-api/
+│   └── mongo/          # MongoDB data files
+```
+
+This makes backup, migration, and cleanup straightforward.
 
 ## Security Notes
 

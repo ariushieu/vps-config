@@ -4,9 +4,14 @@
 # Description: Setup Ubuntu VPS with Docker, SWAP, Firewall,
 #              Nginx and Certbot
 # Author: ariushieu
+#
+# Usage: sudo bash setup_vps.sh [REPO_DIR]
+#   REPO_DIR: path to vps-config repo (default: ~/vps-config)
 # ============================================================
 
 set -euo pipefail
+
+REPO_DIR="${1:-$HOME/vps-config}"
 
 # -----------------------------------------------------------
 # Color & Log helpers
@@ -196,7 +201,115 @@ install_nginx_certbot() {
 }
 
 # -----------------------------------------------------------
-# 8. Summary
+# 8. Auto-link Nginx configs from projects/
+# -----------------------------------------------------------
+link_nginx_configs() {
+    log_section "Step 8: Linking Nginx Configs"
+
+    local PROJECTS_DIR="$REPO_DIR/projects"
+
+    if [[ ! -d "$PROJECTS_DIR" ]]; then
+        log_warn "Projects directory not found: $PROJECTS_DIR. Skipping."
+        return 0
+    fi
+
+    for project_dir in "$PROJECTS_DIR"/*/; do
+        local project_name
+        project_name=$(basename "$project_dir")
+        local nginx_conf="$project_dir/nginx.conf"
+
+        # Skip example- prefixed folders (they are templates)
+        if [[ "$project_name" == example-* ]]; then
+            log_warn "Skipping template: $project_name"
+            continue
+        fi
+
+        if [[ ! -f "$nginx_conf" ]]; then
+            log_warn "No nginx.conf in $project_name. Skipping."
+            continue
+        fi
+
+        local target="/etc/nginx/sites-available/$project_name"
+        local enabled="/etc/nginx/sites-enabled/$project_name"
+
+        # Symlink to sites-available
+        if [[ -L "$target" || -f "$target" ]]; then
+            log_warn "sites-available/$project_name already exists. Removing old..."
+            rm -f "$target"
+        fi
+        ln -s "$nginx_conf" "$target"
+        log_info "Linked: $nginx_conf -> $target"
+
+        # Enable site (symlink to sites-enabled)
+        if [[ -L "$enabled" ]]; then
+            rm -f "$enabled"
+        fi
+        ln -s "$target" "$enabled"
+        log_info "Enabled: sites-enabled/$project_name"
+    done
+
+    # Test and reload
+    if nginx -t 2>/dev/null; then
+        systemctl reload nginx
+        log_info "Nginx reloaded successfully."
+    else
+        log_error "Nginx config test failed! Check your nginx.conf files."
+        nginx -t
+    fi
+}
+
+# -----------------------------------------------------------
+# 9. Prepare data volume directories for Docker bind mounts
+# -----------------------------------------------------------
+prepare_data_volumes() {
+    log_section "Step 9: Preparing Data Volume Directories"
+
+    local PROJECTS_DIR="$REPO_DIR/projects"
+    local DATA_ROOT="/opt/data"
+
+    if [[ ! -d "$PROJECTS_DIR" ]]; then
+        log_warn "Projects directory not found: $PROJECTS_DIR. Skipping."
+        return 0
+    fi
+
+    for project_dir in "$PROJECTS_DIR"/*/; do
+        local project_name
+        project_name=$(basename "$project_dir")
+        local compose_file="$project_dir/docker-compose.yml"
+
+        # Skip example- prefixed folders
+        if [[ "$project_name" == example-* ]]; then
+            continue
+        fi
+
+        if [[ ! -f "$compose_file" ]]; then
+            continue
+        fi
+
+        # Extract /opt/data/... paths from docker-compose.yml
+        local data_paths
+        data_paths=$(grep -oP '/opt/data/[^\s:]+' "$compose_file" 2>/dev/null | sort -u || true)
+
+        if [[ -z "$data_paths" ]]; then
+            log_warn "No /opt/data/ volumes in $project_name. Skipping."
+            continue
+        fi
+
+        while IFS= read -r dir_path; do
+            if [[ -d "$dir_path" ]]; then
+                log_warn "Directory already exists: $dir_path"
+            else
+                mkdir -p "$dir_path"
+                log_info "Created: $dir_path"
+            fi
+        done <<< "$data_paths"
+    done
+
+    log_info "Data volume directories ready."
+}
+
+# -----------------------------------------------------------
+# 10. Summary
 # -----------------------------------------------------------
 print_summary() {
     log_section "Setup Complete!"
@@ -210,11 +323,11 @@ print_summary() {
     log_info "Certbot:               $(certbot --version 2>/dev/null || echo 'N/A')"
     echo ""
     log_info "Next steps:"
-    log_info "  1. Copy your Nginx config to /etc/nginx/sites-available/"
-    log_info "  2. Create symlink:  ln -s /etc/nginx/sites-available/<site> /etc/nginx/sites-enabled/"
-    log_info "  3. Test & reload:   nginx -t && systemctl reload nginx"
+    log_info "  1. Copy an example template:  cp -r projects/example-spring-boot projects/my-app"
+    log_info "  2. Edit docker-compose.yml, .env.example, nginx.conf"
+    log_info "  3. Re-run script to auto-link:  sudo bash setup_vps.sh"
     log_info "  4. Get SSL cert:    certbot --nginx -d your-domain.com"
-    log_info "  5. Deploy with:     docker-compose up -d"
+    log_info "  5. Deploy with:     cd projects/my-app && docker-compose up -d"
     echo ""
 }
 
@@ -230,6 +343,8 @@ main() {
     configure_swap
     setup_firewall
     install_nginx_certbot
+    link_nginx_configs
+    prepare_data_volumes
     print_summary
 }
 
