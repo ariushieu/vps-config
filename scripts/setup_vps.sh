@@ -309,7 +309,38 @@ prepare_data_volumes() {
 }
 
 # -----------------------------------------------------------
-# 10. Summary
+# 10. Setup daily database backup cron job
+# -----------------------------------------------------------
+setup_backup_cron() {
+    log_section "Step 10: Setting up Daily Database Backup"
+
+    local BACKUP_SCRIPT="$REPO_DIR/scripts/backup_db.sh"
+    local CRON_LINE="0 2 * * * bash $BACKUP_SCRIPT $REPO_DIR >> /var/log/backup_db.log 2>&1"
+
+    if [[ ! -f "$BACKUP_SCRIPT" ]]; then
+        log_warn "Backup script not found: $BACKUP_SCRIPT. Skipping."
+        return 0
+    fi
+
+    chmod +x "$BACKUP_SCRIPT"
+
+    # Check if cron job already exists
+    if crontab -l 2>/dev/null | grep -qF "backup_db.sh"; then
+        log_warn "Backup cron job already exists. Skipping."
+        crontab -l 2>/dev/null | grep "backup_db.sh"
+        return 0
+    fi
+
+    # Add cron job
+    (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+    log_info "Cron job added: daily at 02:00 AM"
+    log_info "  $CRON_LINE"
+    log_info "Backups stored at: /opt/backups/ (keep last 7 days)"
+    log_info "Logs at: /var/log/backup_db.log"
+}
+
+# -----------------------------------------------------------
+# 11. Summary
 # -----------------------------------------------------------
 print_summary() {
     log_section "Setup Complete!"
@@ -328,6 +359,7 @@ print_summary() {
     log_info "  3. Re-run script to auto-link:  sudo bash setup_vps.sh"
     log_info "  4. Get SSL cert:    certbot --nginx -d your-domain.com"
     log_info "  5. Deploy with:     cd projects/my-app && docker-compose up -d"
+    log_info "  6. Manual backup:   sudo bash scripts/backup_db.sh"
     echo ""
 }
 
@@ -345,6 +377,7 @@ main() {
     install_nginx_certbot
     link_nginx_configs
     prepare_data_volumes
+    setup_backup_cron
     print_summary
 }
 

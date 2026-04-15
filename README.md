@@ -7,7 +7,8 @@
 ```
 vps-config/
 ├── scripts/
-│   └── setup_vps.sh                  # Main VPS setup script
+│   ├── setup_vps.sh                  # Main VPS setup script
+│   └── backup_db.sh                  # Daily database backup script
 ├── projects/
 │   ├── example-spring-boot/               # Example: Spring Boot + MySQL
 │   │   ├── docker-compose.yml
@@ -61,6 +62,7 @@ This script will automatically:
 | 7 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
 | 8 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
 | 9 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
+| 10 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
 
 ### Step 3: Add a new project & deploy
 
@@ -111,6 +113,57 @@ sudo certbot renew --dry-run
 
 # Check data volumes
 ls -la /opt/data/
+
+# Manual database backup
+sudo bash scripts/backup_db.sh
+
+# Check backup logs
+tail -50 /var/log/backup_db.log
+
+# List backups
+ls -lh /opt/backups/
+```
+
+## Database Backup
+
+The setup script automatically installs a **daily cron job** at 02:00 AM:
+
+```
+0 2 * * * bash ~/vps-config/scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
+```
+
+**How it works:**
+- Scans all project folders (skips `example-*` templates)
+- Detects running MySQL/MongoDB containers
+- Dumps databases via `mysqldump` / `mongodump`
+- Compresses with gzip
+- Keeps last **7 days**, auto-deletes older backups
+
+**Backup location:**
+
+```
+/opt/backups/
+├── my-app/
+│   └── mysql/
+│       ├── my-app_mysql_2026-04-15_02-00-00.sql.gz
+│       └── my-app_mysql_2026-04-14_02-00-00.sql.gz
+├── my-api/
+│   └── mongo/
+│       ├── my-api_mongo_2026-04-15_02-00-00.tar.gz
+│       └── my-api_mongo_2026-04-14_02-00-00.tar.gz
+```
+
+**Restore example:**
+
+```bash
+# MySQL
+gunzip -c /opt/backups/my-app/mysql/my-app_mysql_2026-04-15_02-00-00.sql.gz | \
+    docker exec -i <mysql-container> mysql -u root -p<password>
+
+# MongoDB
+tar -xzf /opt/backups/my-api/mongo/my-api_mongo_2026-04-15_02-00-00.tar.gz -C /tmp
+docker cp /tmp/my-api_mongo_2026-04-15_02-00-00 <mongo-container>:/tmp/restore
+docker exec <mongo-container> mongorestore /tmp/restore
 ```
 
 ## Adding a New Project
