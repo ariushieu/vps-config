@@ -12,7 +12,7 @@ services:
     container_name: <your-app-container-name>                 # e.g. isocial-app
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"                                   # loopback only — Nginx proxies from outside
     env_file:
       - .env
     depends_on:
@@ -33,7 +33,7 @@ services:
     volumes:
       - /opt/data/<your-project-name>/mysql:/var/lib/mysql    # e.g. /opt/data/mini-social-be/mysql
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"                                   # loopback only — never expose DB to internet
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 10s

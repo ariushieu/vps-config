@@ -162,8 +162,8 @@ setup_firewall() {
     log_info "Allowing HTTPS (443/tcp)..."
     ufw allow 443/tcp
 
-    log_info "Allowing App port (8080/tcp)..."
-    ufw allow 8080/tcp
+    # App ports (8080, 3000, etc.) are bound to 127.0.0.1 only
+    # so they don't need UFW rules — Nginx handles external traffic
 
     # Enable UFW (non-interactive)
     echo "y" | ufw enable
