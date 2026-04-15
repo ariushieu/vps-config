@@ -7,14 +7,16 @@
 ```
 vps-config/
 ├── scripts/
-│   └── setup_vps.sh              # Main VPS setup script (Docker, SWAP, UFW, Nginx)
-├── nginx/
-│   └── sites-available/
-│       └── mini-social-be         # Nginx reverse proxy config (example template)
-├── docker/
-│   └── mini-social-be/
-│       ├── docker-compose.yml     # Docker Compose for Spring Boot + MySQL
-│       └── .env.example           # Environment variables template
+│   └── setup_vps.sh                  # Main VPS setup script
+├── projects/
+│   ├── mini-social-be/               # Project: Spring Boot + MySQL
+│   │   ├── docker-compose.yml
+│   │   ├── .env.example
+│   │   └── nginx.conf
+│   └── <your-new-project>/           # Add more projects here
+│       ├── docker-compose.yml
+│       ├── .env.example
+│       └── nginx.conf
 ├── .gitignore
 └── README.md
 ```
@@ -53,57 +55,40 @@ This script will automatically:
 | 6 | Setup Firewall (UFW) | Allow ports: 22, 80, 443, 8080 |
 | 7 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
 
-### Step 3: Configure Nginx for your project
+### Step 3: Deploy a project
 
 ```bash
-# Edit the template - replace <your-domain.com> with your actual domain
-nano nginx/sites-available/mini-social-be
+cd projects/mini-social-be/
 
-# Copy the Nginx config
-sudo cp nginx/sites-available/mini-social-be /etc/nginx/sites-available/
-
-# Create symlink to enable the site
-sudo ln -s /etc/nginx/sites-available/mini-social-be /etc/nginx/sites-enabled/
-
-# Test and reload
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-### Step 4: Get SSL certificate
-
-```bash
-sudo certbot --nginx -d your-domain.com
-```
-
-### Step 5: Deploy your application
-
-```bash
-# Navigate to your project's docker directory
-cd docker/mini-social-be/
-
-# Edit docker-compose.yml - replace <...> placeholders with your values
+# 1. Edit docker-compose.yml - replace <...> placeholders with your values
 nano docker-compose.yml
 
-# Create .env file from template
+# 2. Create .env from template
 cp .env.example .env
-nano .env  # Fill in your actual values
+nano .env
 
-# Start the services
+# 3. Start services
 docker-compose up -d
-
-# Check logs
-docker-compose logs -f
 ```
 
-## Project Configurations
+### Step 4: Configure Nginx + SSL
 
-### mini-social-be (Spring Boot + MySQL)
+```bash
+# 1. Edit nginx config - replace <your-domain.com> with your actual domain
+nano projects/mini-social-be/nginx.conf
 
-- **App container**: `<your-app-container-name>` on port `8080`
-- **MySQL container**: `<your-db-container-name>` on port `3306`
-- **Network**: `backend-network`
-- **Nginx**: Reverse proxy from `your-domain.com` to `localhost:8080` with SSL
+# 2. Copy to Nginx
+sudo cp projects/mini-social-be/nginx.conf /etc/nginx/sites-available/mini-social-be
+
+# 3. Enable site
+sudo ln -s /etc/nginx/sites-available/mini-social-be /etc/nginx/sites-enabled/
+
+# 4. Test and reload
+sudo nginx -t && sudo systemctl reload nginx
+
+# 5. Get SSL certificate
+sudo certbot --nginx -d your-domain.com
+```
 
 ## Common Commands
 
@@ -112,10 +97,11 @@ docker-compose logs -f
 docker ps
 
 # View app logs
-docker logs -f <your-app-container-name>
+docker-compose -f projects/mini-social-be/docker-compose.yml logs -f
 
 # Restart services
-docker-compose down && docker-compose up -d
+docker-compose -f projects/mini-social-be/docker-compose.yml down
+docker-compose -f projects/mini-social-be/docker-compose.yml up -d
 
 # Check swap status
 free -h
@@ -127,22 +113,32 @@ sudo ufw status verbose
 sudo certbot renew --dry-run
 ```
 
+## Adding a New Project
+
+```bash
+# 1. Create project directory
+mkdir projects/my-new-app
+
+# 2. Copy template from existing project
+cp projects/mini-social-be/docker-compose.yml projects/my-new-app/
+cp projects/mini-social-be/.env.example       projects/my-new-app/
+cp projects/mini-social-be/nginx.conf         projects/my-new-app/
+
+# 3. Edit all 3 files with your new project's config
+nano projects/my-new-app/docker-compose.yml
+nano projects/my-new-app/.env.example
+nano projects/my-new-app/nginx.conf
+
+# 4. Deploy
+cd projects/my-new-app && docker-compose up -d
+```
+
 ## Security Notes
 
 - Never commit `.env` files containing secrets
 - Always use strong passwords for MySQL
 - Keep your system updated: `sudo apt update && sudo apt upgrade -y`
 - SSL certificates auto-renew via Certbot's systemd timer
-
-## Adding a New Project
-
-1. Create a new directory under `docker/`:
-   ```bash
-   mkdir docker/my-new-project
-   ```
-2. Add a `docker-compose.yml` and `.env.example`
-3. Add Nginx config under `nginx/sites-available/`
-4. Update this README
 
 ## License
 
