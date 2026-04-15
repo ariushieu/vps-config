@@ -9,7 +9,7 @@ vps-config/
 ├── scripts/
 │   └── setup_vps.sh                  # Main VPS setup script
 ├── projects/
-│   ├── mini-social-be/               # Example: Spring Boot + MySQL
+│   ├── example-spring-boot/               # Example: Spring Boot + MySQL
 │   │   ├── docker-compose.yml
 │   │   ├── .env.example
 │   │   └── nginx.conf
@@ -61,7 +61,7 @@ This script will automatically:
 ### Step 3: Deploy a project
 
 ```bash
-cd projects/mini-social-be/
+cd projects/example-spring-boot/
 
 # 1. Edit docker-compose.yml - replace <...> placeholders with your values
 nano docker-compose.yml
@@ -78,13 +78,13 @@ docker-compose up -d
 
 ```bash
 # 1. Edit nginx config - replace <your-domain.com> with your actual domain
-nano projects/mini-social-be/nginx.conf
+nano projects/example-spring-boot/nginx.conf
 
 # 2. Copy to Nginx
-sudo cp projects/mini-social-be/nginx.conf /etc/nginx/sites-available/mini-social-be
+sudo cp projects/example-spring-boot/nginx.conf /etc/nginx/sites-available/example-spring-boot
 
 # 3. Enable site
-sudo ln -s /etc/nginx/sites-available/mini-social-be /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/example-spring-boot /etc/nginx/sites-enabled/
 
 # 4. Test and reload
 sudo nginx -t && sudo systemctl reload nginx
@@ -100,11 +100,11 @@ sudo certbot --nginx -d your-domain.com
 docker ps
 
 # View app logs
-docker-compose -f projects/mini-social-be/docker-compose.yml logs -f
+docker-compose -f projects/example-spring-boot/docker-compose.yml logs -f
 
 # Restart services
-docker-compose -f projects/mini-social-be/docker-compose.yml down
-docker-compose -f projects/mini-social-be/docker-compose.yml up -d
+docker-compose -f projects/example-spring-boot/docker-compose.yml down
+docker-compose -f projects/example-spring-boot/docker-compose.yml up -d
 
 # Check swap status
 free -h
@@ -120,7 +120,7 @@ sudo certbot renew --dry-run
 
 ```bash
 # 1. Copy the template that matches your stack
-cp -r projects/mini-social-be   projects/my-new-app   # Spring Boot + MySQL
+cp -r projects/example-spring-boot   projects/my-new-app   # Spring Boot + MySQL
 cp -r projects/example-node-app projects/my-new-app   # Node.js + MongoDB
 
 # 2. Edit all 3 files with your new project's config
