@@ -9,14 +9,17 @@ vps-config/
 ├── scripts/
 │   └── setup_vps.sh                  # Main VPS setup script
 ├── projects/
-│   ├── mini-social-be/               # Project: Spring Boot + MySQL
+│   ├── mini-social-be/               # Example: Spring Boot + MySQL
+│   │   ├── docker-compose.yml
+│   │   ├── .env.example
+│   │   └── nginx.conf
+│   ├── example-node-app/             # Example: Node.js + MongoDB
 │   │   ├── docker-compose.yml
 │   │   ├── .env.example
 │   │   └── nginx.conf
 │   └── <your-new-project>/           # Add more projects here
-│       ├── docker-compose.yml
-│       ├── .env.example
-│       └── nginx.conf
+│       ├── ...
+
 ├── .gitignore
 └── README.md
 ```
@@ -116,21 +119,19 @@ sudo certbot renew --dry-run
 ## Adding a New Project
 
 ```bash
-# 1. Create project directory
-mkdir projects/my-new-app
+# 1. Copy the template that matches your stack
+cp -r projects/mini-social-be   projects/my-new-app   # Spring Boot + MySQL
+cp -r projects/example-node-app projects/my-new-app   # Node.js + MongoDB
 
-# 2. Copy template from existing project
-cp projects/mini-social-be/docker-compose.yml projects/my-new-app/
-cp projects/mini-social-be/.env.example       projects/my-new-app/
-cp projects/mini-social-be/nginx.conf         projects/my-new-app/
-
-# 3. Edit all 3 files with your new project's config
+# 2. Edit all 3 files with your new project's config
 nano projects/my-new-app/docker-compose.yml
 nano projects/my-new-app/.env.example
 nano projects/my-new-app/nginx.conf
 
-# 4. Deploy
-cd projects/my-new-app && docker-compose up -d
+# 3. Deploy
+cd projects/my-new-app
+cp .env.example .env && nano .env
+docker-compose up -d
 ```
 
 ## Security Notes
