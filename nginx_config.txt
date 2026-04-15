@@ -1,37 +1,43 @@
-root@ubuntu-hieunq:~# cat /etc/nginx/sites-available/mini-social-be
+# ==========================================================
+# Nginx Config - Original Reference (Example)
+# This is the original config captured from VPS history.
+# The usable template is at: nginx/sites-available/mini-social-be
+# Replace <your-domain.com> with your actual domain.
+# ==========================================================
+
 server {
-    server_name api.qhieu.dev;
+    server_name <your-domain.com>;
 
-    location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+    location / {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Timeout cho Spring Boot
-        proxy_connect_timeout 60s;
-        proxy_send_timeout 60s;
-        proxy_read_timeout 60s;
-    }
+        # Timeout settings
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
 
-    listen 443 ssl; # managed by Certbot
-    ssl_certificate /etc/letsencrypt/live/api.qhieu.dev/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/letsencrypt/live/api.qhieu.dev/privkey.pem; # managed by Certbot
-    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
+    listen 443 ssl; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/<your-domain.com>/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/<your-domain.com>/privkey.pem; # managed by Certbot
+    include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
 
 }
 
 server {
-    if ($host = api.qhieu.dev) {
-        return 301 https://$host$request_uri;
-    } # managed by Certbot
+    if ($host = <your-domain.com>) {
+        return 301 https://$host$request_uri;
+    } # managed by Certbot
 
 
-    listen 80;
-    server_name api.qhieu.dev;
-    return 404; # managed by Certbot
+    listen 80;
+    server_name <your-domain.com>;
+    return 404; # managed by Certbot
 
 
-}root@ubuntu-hieunq:~#
+}

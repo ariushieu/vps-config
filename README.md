@@ -10,7 +10,7 @@ vps-config/
 │   └── setup_vps.sh              # Main VPS setup script (Docker, SWAP, UFW, Nginx)
 ├── nginx/
 │   └── sites-available/
-│       └── mini-social-be         # Nginx reverse proxy config for api.qhieu.dev
+│       └── mini-social-be         # Nginx reverse proxy config (example template)
 ├── docker/
 │   └── mini-social-be/
 │       ├── docker-compose.yml     # Docker Compose for Spring Boot + MySQL
@@ -56,6 +56,9 @@ This script will automatically:
 ### Step 3: Configure Nginx for your project
 
 ```bash
+# Edit the template - replace <your-domain.com> with your actual domain
+nano nginx/sites-available/mini-social-be
+
 # Copy the Nginx config
 sudo cp nginx/sites-available/mini-social-be /etc/nginx/sites-available/
 
@@ -70,7 +73,7 @@ sudo systemctl reload nginx
 ### Step 4: Get SSL certificate
 
 ```bash
-sudo certbot --nginx -d api.qhieu.dev
+sudo certbot --nginx -d your-domain.com
 ```
 
 ### Step 5: Deploy your application
@@ -78,6 +81,9 @@ sudo certbot --nginx -d api.qhieu.dev
 ```bash
 # Navigate to your project's docker directory
 cd docker/mini-social-be/
+
+# Edit docker-compose.yml - replace <...> placeholders with your values
+nano docker-compose.yml
 
 # Create .env file from template
 cp .env.example .env
@@ -94,10 +100,10 @@ docker-compose logs -f
 
 ### mini-social-be (Spring Boot + MySQL)
 
-- **App container**: `isocial-app` on port `8080`
-- **MySQL container**: `isocial-mysql` on port `3306`
+- **App container**: `<your-app-container-name>` on port `8080`
+- **MySQL container**: `<your-db-container-name>` on port `3306`
 - **Network**: `backend-network`
-- **Nginx**: Reverse proxy from `api.qhieu.dev` to `localhost:8080` with SSL
+- **Nginx**: Reverse proxy from `your-domain.com` to `localhost:8080` with SSL
 
 ## Common Commands
 
@@ -106,7 +112,7 @@ docker-compose logs -f
 docker ps
 
 # View app logs
-docker logs -f isocial-app
+docker logs -f <your-app-container-name>
 
 # Restart services
 docker-compose down && docker-compose up -d

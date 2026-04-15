@@ -1,5 +1,11 @@
+# ==========================================================
+# Nginx Reverse Proxy Configuration (Example Template)
+# Replace ALL <your-domain.com> with your actual domain
+# Then run: sudo certbot --nginx -d your-domain.com
+# ==========================================================
+
 server {
-    server_name api.qhieu.dev;
+    server_name <your-domain.com>;
 
     location / {
         proxy_pass http://localhost:8080;
@@ -8,28 +14,28 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Timeout cho Spring Boot
+        # Timeout settings
         proxy_connect_timeout 60s;
         proxy_send_timeout 60s;
         proxy_read_timeout 60s;
     }
 
     listen 443 ssl; # managed by Certbot
-    ssl_certificate /etc/letsencrypt/live/api.qhieu.dev/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/letsencrypt/live/api.qhieu.dev/privkey.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/<your-domain.com>/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/<your-domain.com>/privkey.pem; # managed by Certbot
     include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
 
 }
 
 server {
-    if ($host = api.qhieu.dev) {
+    if ($host = <your-domain.com>) {
         return 301 https://$host$request_uri;
     } # managed by Certbot
 
 
     listen 80;
-    server_name api.qhieu.dev;
+    server_name <your-domain.com>;
     return 404; # managed by Certbot
 
 
