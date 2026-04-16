@@ -512,7 +512,7 @@ prepare_data_volumes() {
 
         # Extract /opt/data/... paths from docker-compose.yml
         local data_paths
-        data_paths=$(grep -oP '/opt/data/[^\s:]+' "$compose_file" 2>/dev/null | sort -u || true)
+        data_paths=$(grep -v '^\s*#' "$compose_file" | grep -oP '/opt/data/[^:\s]+' 2>/dev/null | sort -u || true)
 
         if [[ -z "$data_paths" ]]; then
             log_warn "No /opt/data/ volumes in $project_name. Skipping."

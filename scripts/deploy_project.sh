@@ -292,7 +292,8 @@ setup_ssl() {
 prepare_data_dirs() {
     local compose_file="$PROJECT_DIR/docker-compose.yml"
     local data_paths
-    data_paths=$(grep -oP '/opt/data/[^\s:]+' "$compose_file" 2>/dev/null | sort -u || true)
+    # Only match paths before ":" (volume mount left side), skip comments
+    data_paths=$(grep -v '^\s*#' "$compose_file" | grep -oP '/opt/data/[^:\s]+' 2>/dev/null | sort -u || true)
 
     if [[ -n "$data_paths" ]]; then
         while IFS= read -r dir_path; do
