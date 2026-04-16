@@ -253,13 +253,29 @@ DOCKER_CONF
 install_docker_compose() {
     log_section "Step 3: Installing Docker Compose"
 
-    if command -v docker-compose &>/dev/null; then
-        log_warn "Docker Compose is already installed: $(docker-compose --version). Skipping."
+    # Check for V2 plugin first (docker compose), then V1 standalone (docker-compose)
+    if docker compose version &>/dev/null; then
+        log_warn "Docker Compose V2 already installed: $(docker compose version). Skipping."
         return 0
     fi
 
-    apt install docker-compose -y
-    log_info "Docker Compose installed: $(docker-compose --version)"
+    # Remove old V1 if present (buggy with Docker Engine 25+)
+    if command -v docker-compose &>/dev/null; then
+        log_warn "Removing outdated Docker Compose V1..."
+        apt remove docker-compose -y 2>/dev/null || true
+    fi
+
+    # Install V2 plugin
+    log_info "Installing Docker Compose V2 plugin..."
+    apt install docker-compose-v2 -y
+
+    # Create backward-compatible alias so "docker-compose" still works
+    if ! command -v docker-compose &>/dev/null; then
+        ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+        log_info "Created alias: docker-compose -> docker compose"
+    fi
+
+    log_info "Docker Compose installed: $(docker compose version)"
 }
 
 # -----------------------------------------------------------
