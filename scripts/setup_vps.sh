@@ -39,28 +39,73 @@ check_root() {
 }
 
 # -----------------------------------------------------------
+# 1a. Find and set fastest Ubuntu mirror
+# -----------------------------------------------------------
+setup_fastest_mirror() {
+    log_info "Finding fastest Ubuntu mirror for this region..."
+
+    # Get list of mirrors near this server's location
+    local mirror_list
+    mirror_list=$(curl -sL --max-time 10 http://mirrors.ubuntu.com/mirrors.txt 2>/dev/null || true)
+
+    if [[ -z "$mirror_list" ]]; then
+        log_warn "Could not fetch mirror list. Keeping current mirror."
+        return 0
+    fi
+
+    # Test top 5 mirrors, pick the fastest
+    local fastest_mirror=""
+    local fastest_time=9999
+
+    while IFS= read -r mirror; do
+        [[ -z "$mirror" ]] && continue
+        # Time a small download from each mirror
+        local time
+        time=$(curl -o /dev/null -sL --max-time 5 -w "%{time_total}" "${mirror}dists/" 2>/dev/null || echo "9999")
+        local time_ms
+        time_ms=$(echo "$time" | awk '{printf "%d", $1 * 1000}')
+
+        if [[ "$time_ms" -lt "$fastest_time" ]]; then
+            fastest_time="$time_ms"
+            fastest_mirror="$mirror"
+        fi
+    done <<< "$(echo "$mirror_list" | head -5)"
+
+    if [[ -n "$fastest_mirror" ]]; then
+        # Remove trailing slash for sed
+        fastest_mirror="${fastest_mirror%/}"
+        local current_mirror
+        current_mirror=$(grep -oP 'http://[^ ]+(?=/ubuntu)' /etc/apt/sources.list 2>/dev/null | head -1 || true)
+
+        if [[ "$current_mirror" == "$fastest_mirror" ]]; then
+            log_info "Current mirror is already optimal: $fastest_mirror"
+            return 0
+        fi
+
+        cp /etc/apt/sources.list /etc/apt/sources.list.bak
+        sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}/ubuntu|g" /etc/apt/sources.list
+        log_info "Switched to fastest mirror: $fastest_mirror (${fastest_time}ms)"
+    else
+        log_warn "Mirror test failed. Keeping current mirror."
+    fi
+}
+
+# -----------------------------------------------------------
 # 1. Update & Upgrade system
 # -----------------------------------------------------------
 update_system() {
     log_section "Step 1: Updating & Upgrading System"
 
-    # Try apt update, fallback to nearest Ubuntu mirror if VPS mirror fails
+    # Always find the fastest mirror first
+    setup_fastest_mirror
+
     if ! apt update 2>&1; then
-        log_warn "apt update failed — VPS mirror may be syncing."
-        log_info "Switching to nearest Ubuntu mirror (mirrors.ubuntu.com/mirrors.txt)..."
-
-        cp /etc/apt/sources.list /etc/apt/sources.list.bak
-        sed -i -E 's|http://[^ ]+/ubuntu|http://mirrors.ubuntu.com/mirrors.txt|g' /etc/apt/sources.list
-        log_info "Mirror switched. Retrying apt update..."
-
-        if ! apt update 2>&1; then
-            log_warn "Nearest mirror also failed. Falling back to archive.ubuntu.com..."
-            sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
-            apt update
-        fi
+        log_warn "apt update failed. Falling back to archive.ubuntu.com..."
+        sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+        apt update
     fi
 
-    log_info "Upgrading packages (this may take a few minutes)..."
+    log_info "Upgrading packages (this may take a few minutes on first run)..."
     apt upgrade -y
 
     # Enable automatic security updates
