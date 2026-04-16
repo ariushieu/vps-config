@@ -415,7 +415,7 @@ setup_backup_cron() {
     fi
 
     # Add cron job
-    (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+    (crontab -l 2>/dev/null || true; echo "$CRON_LINE") | crontab -
     log_info "Cron job added: daily at 02:00 AM"
     log_info "  $CRON_LINE"
     log_info "Backups stored at: /opt/backups/ (keep last 7 days)"
