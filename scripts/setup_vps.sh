@@ -42,48 +42,54 @@ check_root() {
 # 1a. Find and set fastest Ubuntu mirror
 # -----------------------------------------------------------
 setup_fastest_mirror() {
-    log_info "Finding fastest Ubuntu mirror for this region..."
+    log_info "Finding fastest Ubuntu mirror..."
 
-    # Get list of mirrors near this server's location
-    local mirror_list
-    mirror_list=$(curl -sL --max-time 10 http://mirrors.ubuntu.com/mirrors.txt 2>/dev/null || true)
+    # Global mirror list covering major regions
+    local mirrors=(
+        "http://archive.ubuntu.com/ubuntu"          # US (default)
+        "http://us.archive.ubuntu.com/ubuntu"       # US
+        "http://eu.archive.ubuntu.com/ubuntu"       # Europe
+        "http://sg.archive.ubuntu.com/ubuntu"       # Singapore
+        "http://kr.archive.ubuntu.com/ubuntu"       # Korea
+        "http://jp.archive.ubuntu.com/ubuntu"       # Japan
+        "http://tw.archive.ubuntu.com/ubuntu"       # Taiwan
+        "http://au.archive.ubuntu.com/ubuntu"       # Australia
+        "http://de.archive.ubuntu.com/ubuntu"       # Germany
+        "http://gb.archive.ubuntu.com/ubuntu"       # UK
+    )
 
-    if [[ -z "$mirror_list" ]]; then
-        log_warn "Could not fetch mirror list. Keeping current mirror."
-        return 0
-    fi
-
-    # Test top 5 mirrors, pick the fastest
     local fastest_mirror=""
-    local fastest_time=9999
+    local fastest_time=99999
 
-    while IFS= read -r mirror; do
-        [[ -z "$mirror" ]] && continue
-        # Time a small download from each mirror
+    for mirror in "${mirrors[@]}"; do
+        # Download a small file and measure speed
         local time
-        time=$(curl -o /dev/null -sL --max-time 5 -w "%{time_total}" "${mirror}dists/" 2>/dev/null || echo "9999")
+        time=$(curl -o /dev/null -sL --max-time 3 -w "%{time_total}" "${mirror}/dists/noble/Release" 2>/dev/null || echo "99")
         local time_ms
-        time_ms=$(echo "$time" | awk '{printf "%d", $1 * 1000}')
+        time_ms=$(awk "BEGIN {printf \"%d\", $time * 1000}")
 
-        if [[ "$time_ms" -lt "$fastest_time" ]]; then
+        log_info "  $mirror — ${time_ms}ms"
+
+        if [[ "$time_ms" -lt "$fastest_time" && "$time_ms" -gt 0 ]]; then
             fastest_time="$time_ms"
             fastest_mirror="$mirror"
         fi
-    done <<< "$(echo "$mirror_list" | head -5)"
+    done
 
     if [[ -n "$fastest_mirror" ]]; then
-        # Remove trailing slash for sed
-        fastest_mirror="${fastest_mirror%/}"
         local current_mirror
-        current_mirror=$(grep -oP 'http://[^ ]+(?=/ubuntu)' /etc/apt/sources.list 2>/dev/null | head -1 || true)
+        current_mirror=$(grep -oP 'http://[^ ]+/ubuntu' /etc/apt/sources.list 2>/dev/null | head -1 || true)
+        # Normalize trailing slash
+        current_mirror="${current_mirror%/}"
+        fastest_mirror="${fastest_mirror%/}"
 
         if [[ "$current_mirror" == "$fastest_mirror" ]]; then
-            log_info "Current mirror is already optimal: $fastest_mirror"
+            log_info "Current mirror is already the fastest: $fastest_mirror (${fastest_time}ms)"
             return 0
         fi
 
         cp /etc/apt/sources.list /etc/apt/sources.list.bak
-        sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}/ubuntu|g" /etc/apt/sources.list
+        sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
         log_info "Switched to fastest mirror: $fastest_mirror (${fastest_time}ms)"
     else
         log_warn "Mirror test failed. Keeping current mirror."
