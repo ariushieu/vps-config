@@ -54,6 +54,24 @@ update_system() {
     fi
 
     log_info "System updated successfully."
+
+    # Check if reboot is required (kernel/systemd/netplan upgrade)
+    if [[ -f /var/run/reboot-required ]]; then
+        echo ""
+        log_warn "============================================="
+        log_warn "  REBOOT REQUIRED after system upgrade!"
+        log_warn "  (Kernel, Systemd, or Netplan was updated)"
+        log_warn "============================================="
+        log_warn ""
+        log_warn "Please reboot now, then re-run this script:"
+        log_warn "  sudo reboot"
+        log_warn "  sudo bash $REPO_DIR/scripts/setup_vps.sh"
+        log_warn ""
+        log_warn "The script is idempotent — it will skip"
+        log_warn "completed steps and continue from step 2."
+        echo ""
+        exit 0
+    fi
 }
 
 # -----------------------------------------------------------

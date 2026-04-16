@@ -50,6 +50,16 @@ sudo bash scripts/setup_vps.sh          # default: uses ~/vps-config
 sudo bash scripts/setup_vps.sh /opt/vps-config
 ```
 
+> **⚠️ Reboot after upgrade:** If a kernel, systemd, or netplan update is detected,
+> the script will **stop after step 1** and ask you to reboot. After reboot, simply
+> re-run the same command — the script is **idempotent** and will skip completed steps.
+>
+> ```bash
+> sudo reboot
+> # after reconnecting:
+> sudo bash ~/vps-config/scripts/setup_vps.sh
+> ```
+
 This script will automatically:
 
 | # | Task | Details |
