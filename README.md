@@ -78,6 +78,10 @@ This script will automatically:
 | 9 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
 | 10 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
 | 11 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
+| 12 | Configure timezone | Interactive timezone selection (default: Asia/Ho_Chi_Minh) |
+
+> **⚠️ Non-standard SSH port:** Some VPS providers use custom SSH ports (e.g. 8686 instead of 22).
+> The script **auto-detects your SSH port** and opens it in UFW, so you won't get locked out.
 
 ### Step 3: Deploy a new project (interactive)
 

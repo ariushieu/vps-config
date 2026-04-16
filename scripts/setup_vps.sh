@@ -26,6 +26,7 @@ log_info()    { echo -e "${GREEN}[INFO]${NC}  $1"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC}  $1"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $1"; }
 log_section() { echo -e "\n${GREEN}========== $1 ==========${NC}\n"; }
+prompt()      { echo -en "${CYAN}[?]${NC} $1"; }
 
 # -----------------------------------------------------------
 # 0. Check root privileges
@@ -334,8 +335,27 @@ setup_firewall() {
         apt install ufw -y
     fi
 
-    log_info "Allowing SSH (22/tcp)..."
-    ufw allow 22/tcp
+    # Auto-detect SSH port (some VPS providers use non-standard ports)
+    local ssh_port
+    ssh_port=$(grep -oP '^\s*Port\s+\K\d+' /etc/ssh/sshd_config 2>/dev/null | head -1 || true)
+    # Also check active SSH connection as fallback
+    if [[ -z "$ssh_port" || "$ssh_port" == "22" ]]; then
+        local active_port
+        active_port=$(ss -tlnp | grep sshd | grep -oP ':\K\d+' | head -1 || true)
+        if [[ -n "$active_port" ]]; then
+            ssh_port="$active_port"
+        fi
+    fi
+    ssh_port="${ssh_port:-22}"
+
+    log_info "Allowing SSH (${ssh_port}/tcp)..."
+    ufw allow "$ssh_port/tcp"
+
+    # Also allow 22 if SSH is on a different port (in case they switch back)
+    if [[ "$ssh_port" != "22" ]]; then
+        log_info "Also allowing default SSH (22/tcp) as fallback..."
+        ufw allow 22/tcp
+    fi
 
     log_info "Allowing HTTP (80/tcp)..."
     ufw allow 80/tcp
@@ -564,7 +584,51 @@ setup_backup_cron() {
 }
 
 # -----------------------------------------------------------
-# 11. Summary
+# 11. Configure timezone
+# -----------------------------------------------------------
+configure_timezone() {
+    log_section "Step 11: Configuring Timezone"
+
+    local current_tz
+    current_tz=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "unknown")
+    log_info "Current timezone: $current_tz"
+
+    if [[ "$current_tz" != "UTC" && "$current_tz" != "unknown" ]]; then
+        log_info "Timezone already configured: $current_tz. Skipping."
+        return 0
+    fi
+
+    # Show common timezones and let user choose
+    echo ""
+    log_info "Common timezones:"
+    echo "  1) Asia/Ho_Chi_Minh  (UTC+7, Vietnam)"
+    echo "  2) Asia/Singapore    (UTC+8)"
+    echo "  3) Asia/Tokyo        (UTC+9, Japan)"
+    echo "  4) America/New_York  (UTC-5/-4, US East)"
+    echo "  5) Europe/London     (UTC+0/+1, UK)"
+    echo "  6) UTC               (keep default)"
+    echo ""
+    prompt "Choose timezone [1-6] (default: 1): "
+    read -r TZ_CHOICE
+
+    local tz="Asia/Ho_Chi_Minh"
+    case "${TZ_CHOICE:-1}" in
+        1) tz="Asia/Ho_Chi_Minh" ;;
+        2) tz="Asia/Singapore" ;;
+        3) tz="Asia/Tokyo" ;;
+        4) tz="America/New_York" ;;
+        5) tz="Europe/London" ;;
+        6) tz="UTC" ;;
+        *) tz="Asia/Ho_Chi_Minh" ;;
+    esac
+
+    timedatectl set-timezone "$tz"
+    log_info "Timezone set to: $tz"
+    log_info "Current time: $(date)"
+}
+
+# -----------------------------------------------------------
+# 12. Summary
 # -----------------------------------------------------------
 print_summary() {
     log_section "Setup Complete!"
@@ -576,6 +640,8 @@ print_summary() {
     log_info "Firewall (UFW):        $(ufw status 2>/dev/null | head -1 || echo 'N/A')"
     log_info "Nginx:                 $(nginx -v 2>&1 || echo 'N/A')"
     log_info "Certbot:               $(certbot --version 2>/dev/null || echo 'N/A')"
+    log_info "Timezone:              $(timedatectl show --property=Timezone --value 2>/dev/null || echo 'N/A')"
+    log_info "Time:                  $(date)"
     echo ""
     log_info "Next steps:"
     log_info "  1. Copy an example template:  cp -r projects/example-spring-boot projects/my-app"
@@ -590,7 +656,7 @@ print_summary() {
 # -----------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------
-TOTAL_STEPS=11
+TOTAL_STEPS=12
 CURRENT_STEP=0
 SCRIPT_START=$(date +%s)
 
@@ -627,6 +693,7 @@ main() {
     run_step link_nginx_configs    "Link Nginx configs"
     run_step prepare_data_volumes  "Prepare data volumes"
     run_step setup_backup_cron     "Setup backup cron"
+    run_step configure_timezone    "Configure timezone"
 
     local total_elapsed=$(( $(date +%s) - SCRIPT_START ))
     local mins=$(( total_elapsed / 60 ))
