@@ -19,6 +19,7 @@ REPO_DIR="${1:-$HOME/vps-config}"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 log_info()    { echo -e "${GREEN}[INFO]${NC}  $1"; }
@@ -43,18 +44,23 @@ check_root() {
 update_system() {
     log_section "Step 1: Updating & Upgrading System"
 
-    # Try apt update, fallback to official Ubuntu mirror if VPS mirror is syncing
+    # Try apt update, fallback to nearest Ubuntu mirror if VPS mirror fails
     if ! apt update 2>&1; then
         log_warn "apt update failed — VPS mirror may be syncing."
-        log_info "Switching to official Ubuntu mirror (archive.ubuntu.com)..."
+        log_info "Switching to nearest Ubuntu mirror (mirrors.ubuntu.com/mirrors.txt)..."
 
         cp /etc/apt/sources.list /etc/apt/sources.list.bak
-        sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+        sed -i -E 's|http://[^ ]+/ubuntu|http://mirrors.ubuntu.com/mirrors.txt|g' /etc/apt/sources.list
         log_info "Mirror switched. Retrying apt update..."
 
-        apt update
+        if ! apt update 2>&1; then
+            log_warn "Nearest mirror also failed. Falling back to archive.ubuntu.com..."
+            sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+            apt update
+        fi
     fi
 
+    log_info "Upgrading packages (this may take a few minutes)..."
     apt upgrade -y
 
     # Enable automatic security updates
@@ -480,20 +486,50 @@ print_summary() {
 # -----------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------
+TOTAL_STEPS=11
+CURRENT_STEP=0
+SCRIPT_START=$(date +%s)
+
+run_step() {
+    local func="$1"
+    local desc="$2"
+    ((CURRENT_STEP++))
+    echo ""
+    echo -e "${CYAN}[$CURRENT_STEP/$TOTAL_STEPS]${NC} $desc"
+    local step_start
+    step_start=$(date +%s)
+
+    "$func"
+
+    local elapsed=$(( $(date +%s) - step_start ))
+    log_info "Done in ${elapsed}s"
+}
+
 main() {
     check_root
-    update_system
-    install_docker
-    install_docker_compose
-    create_docker_network
-    configure_swap
-    setup_firewall
-    install_fail2ban
-    install_nginx_certbot
-    link_nginx_configs
-    prepare_data_volumes
-    setup_backup_cron
+    echo ""
+    echo -e "${GREEN}======================================${NC}"
+    echo -e "${GREEN}  VPS Setup Script — $TOTAL_STEPS steps  ${NC}"
+    echo -e "${GREEN}======================================${NC}"
+
+    run_step update_system         "Update & upgrade system"
+    run_step install_docker        "Install Docker"
+    run_step install_docker_compose "Install Docker Compose"
+    run_step create_docker_network "Create Docker network"
+    run_step configure_swap        "Configure SWAP (2GB)"
+    run_step setup_firewall        "Setup Firewall (UFW)"
+    run_step install_fail2ban      "Install Fail2Ban"
+    run_step install_nginx_certbot "Install Nginx & Certbot"
+    run_step link_nginx_configs    "Link Nginx configs"
+    run_step prepare_data_volumes  "Prepare data volumes"
+    run_step setup_backup_cron     "Setup backup cron"
+
+    local total_elapsed=$(( $(date +%s) - SCRIPT_START ))
+    local mins=$(( total_elapsed / 60 ))
+    local secs=$(( total_elapsed % 60 ))
+
     print_summary
+    log_info "Total time: ${mins}m ${secs}s"
 }
 
 main "$@"
