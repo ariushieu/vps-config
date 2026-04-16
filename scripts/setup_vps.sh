@@ -42,7 +42,20 @@ check_root() {
 # -----------------------------------------------------------
 update_system() {
     log_section "Step 1: Updating & Upgrading System"
-    apt update && apt upgrade -y
+
+    # Try apt update, fallback to official Ubuntu mirror if VPS mirror is syncing
+    if ! apt update 2>&1; then
+        log_warn "apt update failed — VPS mirror may be syncing."
+        log_info "Switching to official Ubuntu mirror (archive.ubuntu.com)..."
+
+        cp /etc/apt/sources.list /etc/apt/sources.list.bak
+        sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+        log_info "Mirror switched. Retrying apt update..."
+
+        apt update
+    fi
+
+    apt upgrade -y
 
     # Enable automatic security updates
     if ! dpkg -l | grep -q unattended-upgrades; then
