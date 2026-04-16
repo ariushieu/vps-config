@@ -81,6 +81,18 @@ This script will automatically:
 
 ### Step 3: Deploy a new project (interactive)
 
+> **Before you start:** Point your domain's DNS (A record) to this VPS's IP address.
+> Certbot needs DNS to be active to issue SSL certificates.
+>
+> ```
+> Type: A
+> Name: api.qhieu.dev (or your domain)
+> Value: <your-vps-ip>
+> TTL: Auto
+> ```
+>
+> Verify with: `dig +short api.qhieu.dev` — should return your VPS IP.
+
 ```bash
 sudo bash scripts/deploy_project.sh
 ```
