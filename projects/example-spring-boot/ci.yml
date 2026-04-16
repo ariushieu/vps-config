@@ -1,0 +1,33 @@
+# ==========================================================
+# CI - Build and Test (Spring Boot + Maven)
+# Copy this file to your project's .github/workflows/ci.yml
+# Replace placeholder values (<...>) with your actual config
+# ==========================================================
+
+name: CI - Build and Test
+
+on:
+  push:
+    branches-ignore:
+      - main                          # skip CI on main — CD handles it
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"          # <-- adjust to your Java version
+          distribution: "temurin"
+          cache: "maven"
+
+      - name: Build with Maven
+        run: mvn clean verify         # build + run tests

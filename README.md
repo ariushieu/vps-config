@@ -11,17 +11,20 @@ vps-config/
 │   ├── deploy_project.sh             # Interactive project deployment
 │   └── backup_db.sh                  # Daily database backup script
 ├── projects/
-│   ├── example-spring-boot/               # Example: Spring Boot + MySQL
+│   ├── example-spring-boot/          # Example: Spring Boot + MySQL
 │   │   ├── docker-compose.yml
 │   │   ├── .env.example
-│   │   └── nginx.conf
+│   │   ├── nginx.conf
+│   │   ├── ci.yml                    # GitHub Actions CI template
+│   │   └── cd.yml                    # GitHub Actions CD template
 │   ├── example-node-app/             # Example: Node.js + MongoDB
 │   │   ├── docker-compose.yml
 │   │   ├── .env.example
-│   │   └── nginx.conf
+│   │   ├── nginx.conf
+│   │   ├── ci.yml                    # GitHub Actions CI template
+│   │   └── cd.yml                    # GitHub Actions CD template
 │   └── <your-new-project>/           # Add more projects here
 │       ├── ...
-
 ├── .gitignore
 └── README.md
 ```
@@ -197,6 +200,72 @@ cd projects/my-new-app
 cp .env.example .env && nano .env
 docker-compose up -d
 sudo certbot --nginx -d your-domain.com
+```
+
+## CI/CD with GitHub Actions
+
+Each project template includes **CI/CD workflow files** (`ci.yml` + `cd.yml`). These are templates — copy them to your **project source code repo** (not this vps-config repo).
+
+### Setup
+
+```bash
+# In your project source code repo:
+mkdir -p .github/workflows
+
+# Copy from vps-config template (pick your stack):
+cp ~/vps-config/projects/example-spring-boot/ci.yml .github/workflows/ci.yml
+cp ~/vps-config/projects/example-spring-boot/cd.yml .github/workflows/cd.yml
+# or for Node.js:
+cp ~/vps-config/projects/example-node-app/ci.yml .github/workflows/ci.yml
+cp ~/vps-config/projects/example-node-app/cd.yml .github/workflows/cd.yml
+```
+
+### Replace placeholders
+
+Open each file and replace `<...>` values:
+
+| Placeholder | Example |
+|-------------|---------|
+| `<your-dockerhub-username>` | `ariushieu` |
+| `<your-app-name>` | `mini-social-be` |
+| `<your-project-name>` | `mini-social-be` |
+| `<your-app-container-name>` | `mini-social-be-app` |
+
+### Add GitHub Secrets
+
+Go to your repo → **Settings → Secrets and variables → Actions**, add:
+
+| Secret | Description |
+|--------|-------------|
+| `DOCKERHUB_USERNAME` | Docker Hub username |
+| `DOCKERHUB_TOKEN` | Docker Hub **Access Token** (not password!) |
+| `VPS_HOST` | VPS IP address or hostname |
+| `VPS_USERNAME` | SSH user (e.g. `root`) |
+| `VPS_SSH_KEY` | Private SSH key for VPS access |
+
+> **Security note:** Always use a Docker Hub **Access Token** instead of your password.
+> Create one at: https://hub.docker.com/settings/security
+
+### How it works
+
+```
+Push to feature branch → CI: build + test
+Push/merge to main     → CD: build → push to DockerHub → deploy to VPS
+```
+
+- **CI** (`ci.yml`): Runs on all branches except `main`. Builds and tests only.
+- **CD** (`cd.yml`): Runs on `main` only. Builds Docker image, pushes to DockerHub with `latest` + git SHA tags, SSHs into VPS to pull and restart, then verifies health.
+
+### Your project repo structure
+
+```
+my-project/                    ← your source code repo on GitHub
+├── .github/workflows/
+│   ├── ci.yml                 ← copied from vps-config template
+│   └── cd.yml                 ← copied from vps-config template
+├── Dockerfile
+├── src/
+└── ...
 ```
 
 ## Data Storage

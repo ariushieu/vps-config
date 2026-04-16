@@ -1,0 +1,38 @@
+# ==========================================================
+# CI - Build and Test (Node.js)
+# Copy this file to your project's .github/workflows/ci.yml
+# Replace placeholder values (<...>) with your actual config
+# ==========================================================
+
+name: CI - Build and Test
+
+on:
+  push:
+    branches-ignore:
+      - main                          # skip CI on main — CD handles it
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"          # <-- adjust to your Node version
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm test --if-present
