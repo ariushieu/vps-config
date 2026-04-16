@@ -493,7 +493,7 @@ SCRIPT_START=$(date +%s)
 run_step() {
     local func="$1"
     local desc="$2"
-    ((CURRENT_STEP++))
+    CURRENT_STEP=$((CURRENT_STEP + 1))
     echo ""
     echo -e "${CYAN}[$CURRENT_STEP/$TOTAL_STEPS]${NC} $desc"
     local step_start
