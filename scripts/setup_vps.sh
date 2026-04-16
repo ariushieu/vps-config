@@ -85,8 +85,14 @@ setup_fastest_mirror() {
     best_kb=$(awk "BEGIN {printf \"%d\", $fastest_speed / 1024}")
 
     if [[ -n "$fastest_mirror" && "$fastest_speed" -gt 0 ]]; then
-        local current_mirror
-        current_mirror=$(grep -oP 'http://[^ ]+/ubuntu' /etc/apt/sources.list 2>/dev/null | head -1 || true)
+        local current_mirror=""
+        # Check DEB822 format first (Ubuntu 24.04+), then classic sources.list
+        if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            current_mirror=$(grep -oP 'URIs: \Khttp://[^ ]+' /etc/apt/sources.list.d/ubuntu.sources 2>/dev/null | head -1 || true)
+        fi
+        if [[ -z "$current_mirror" ]]; then
+            current_mirror=$(grep -oP 'http://[^ ]+/ubuntu' /etc/apt/sources.list 2>/dev/null | head -1 || true)
+        fi
         current_mirror="${current_mirror%/}"
         fastest_mirror="${fastest_mirror%/}"
 
@@ -95,8 +101,22 @@ setup_fastest_mirror() {
             return 0
         fi
 
-        cp /etc/apt/sources.list /etc/apt/sources.list.bak
-        sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
+        # Detect apt source format: DEB822 (noble+) or classic sources.list
+        local deb822="/etc/apt/sources.list.d/ubuntu.sources"
+        if [[ -f "$deb822" ]]; then
+            cp "$deb822" "${deb822}.bak"
+            # DEB822 format uses "URIs: http://..."
+            sed -i -E "s|URIs: http://[^ ]+/ubuntu/?|URIs: ${fastest_mirror}|g" "$deb822"
+            log_info "Updated DEB822 source: $deb822"
+        fi
+
+        # Also update classic sources.list if it has real entries
+        if [[ -f /etc/apt/sources.list ]] && grep -qE '^deb ' /etc/apt/sources.list 2>/dev/null; then
+            cp /etc/apt/sources.list /etc/apt/sources.list.bak
+            sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
+            log_info "Updated classic source: /etc/apt/sources.list"
+        fi
+
         log_info "Switched to fastest mirror: $fastest_mirror (${best_kb} KB/s)"
     else
         log_warn "Mirror test failed. Keeping current mirror."
