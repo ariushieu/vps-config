@@ -44,53 +44,60 @@ check_root() {
 setup_fastest_mirror() {
     log_info "Finding fastest Ubuntu mirror..."
 
-    # Global mirror list covering major regions
+    # Global mirror list — includes local mirrors for major VPS regions
     local mirrors=(
-        "http://archive.ubuntu.com/ubuntu"          # US (default)
-        "http://us.archive.ubuntu.com/ubuntu"       # US
-        "http://eu.archive.ubuntu.com/ubuntu"       # Europe
-        "http://sg.archive.ubuntu.com/ubuntu"       # Singapore
-        "http://kr.archive.ubuntu.com/ubuntu"       # Korea
-        "http://jp.archive.ubuntu.com/ubuntu"       # Japan
-        "http://tw.archive.ubuntu.com/ubuntu"       # Taiwan
-        "http://au.archive.ubuntu.com/ubuntu"       # Australia
-        "http://de.archive.ubuntu.com/ubuntu"       # Germany
-        "http://gb.archive.ubuntu.com/ubuntu"       # UK
+        # Vietnam (domestic bandwidth is fast, international is slow)
+        "http://opensource.xtdv.net/ubuntu"            # VN - XTDV
+        "http://mirror.bizflycloud.vn/ubuntu"          # VN - BizFly
+        # Asia-Pacific
+        "http://sg.archive.ubuntu.com/ubuntu"          # Singapore
+        "http://kr.archive.ubuntu.com/ubuntu"          # Korea
+        "http://jp.archive.ubuntu.com/ubuntu"          # Japan
+        "http://tw.archive.ubuntu.com/ubuntu"          # Taiwan
+        "http://au.archive.ubuntu.com/ubuntu"          # Australia
+        # US / Europe
+        "http://archive.ubuntu.com/ubuntu"             # US (default)
+        "http://de.archive.ubuntu.com/ubuntu"          # Germany
+        "http://gb.archive.ubuntu.com/ubuntu"          # UK
     )
 
     local fastest_mirror=""
-    local fastest_time=99999
+    local fastest_speed=0
 
     for mirror in "${mirrors[@]}"; do
-        # Download a small file and measure speed
-        local time
-        time=$(curl -o /dev/null -sL --max-time 3 -w "%{time_total}" "${mirror}/dists/noble/Release" 2>/dev/null || echo "99")
-        local time_ms
-        time_ms=$(awk "BEGIN {printf \"%d\", $time * 1000}")
+        # Measure actual download speed (bytes/sec) with a real file (~30KB)
+        local speed
+        speed=$(curl -o /dev/null -sL --max-time 5 -w "%{speed_download}" "${mirror}/dists/noble/Release" 2>/dev/null || echo "0")
+        local speed_kb
+        speed_kb=$(awk "BEGIN {printf \"%d\", $speed / 1024}")
 
-        log_info "  $mirror — ${time_ms}ms"
+        log_info "  $mirror — ${speed_kb} KB/s"
 
-        if [[ "$time_ms" -lt "$fastest_time" && "$time_ms" -gt 0 ]]; then
-            fastest_time="$time_ms"
+        local speed_int
+        speed_int=$(awk "BEGIN {printf \"%d\", $speed}")
+        if [[ "$speed_int" -gt "$fastest_speed" ]]; then
+            fastest_speed="$speed_int"
             fastest_mirror="$mirror"
         fi
     done
 
-    if [[ -n "$fastest_mirror" ]]; then
+    local best_kb
+    best_kb=$(awk "BEGIN {printf \"%d\", $fastest_speed / 1024}")
+
+    if [[ -n "$fastest_mirror" && "$fastest_speed" -gt 0 ]]; then
         local current_mirror
         current_mirror=$(grep -oP 'http://[^ ]+/ubuntu' /etc/apt/sources.list 2>/dev/null | head -1 || true)
-        # Normalize trailing slash
         current_mirror="${current_mirror%/}"
         fastest_mirror="${fastest_mirror%/}"
 
         if [[ "$current_mirror" == "$fastest_mirror" ]]; then
-            log_info "Current mirror is already the fastest: $fastest_mirror (${fastest_time}ms)"
+            log_info "Current mirror is already the fastest: $fastest_mirror (${best_kb} KB/s)"
             return 0
         fi
 
         cp /etc/apt/sources.list /etc/apt/sources.list.bak
         sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
-        log_info "Switched to fastest mirror: $fastest_mirror (${fastest_time}ms)"
+        log_info "Switched to fastest mirror: $fastest_mirror (${best_kb} KB/s)"
     else
         log_warn "Mirror test failed. Keeping current mirror."
     fi
