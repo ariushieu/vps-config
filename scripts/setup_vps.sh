@@ -44,32 +44,57 @@ check_root() {
 setup_fastest_mirror() {
     log_info "Finding fastest Ubuntu mirror..."
 
-    # Global mirror list — includes local mirrors for major VPS regions
+    # Global mirror list — covers major VPS providers and regions
     local mirrors=(
-        # Vietnam (domestic bandwidth is fast, international is slow)
+        # Vietnam (domestic bandwidth >> international)
         "http://opensource.xtdv.net/ubuntu"            # VN - XTDV
         "http://mirror.bizflycloud.vn/ubuntu"          # VN - BizFly
+
+        # VPS provider mirrors (DigitalOcean, Hetzner, OVH, etc.)
+        "http://mirrors.digitalocean.com/ubuntu"       # DigitalOcean
+        "http://mirror.hetzner.com/ubuntu/packages"    # Hetzner (EU)
+        "http://mirror.us.leaseweb.net/ubuntu"         # LeaseWeb (US)
+
         # Asia-Pacific
         "http://sg.archive.ubuntu.com/ubuntu"          # Singapore
         "http://kr.archive.ubuntu.com/ubuntu"          # Korea
         "http://jp.archive.ubuntu.com/ubuntu"          # Japan
-        "http://tw.archive.ubuntu.com/ubuntu"          # Taiwan
-        "http://au.archive.ubuntu.com/ubuntu"          # Australia
-        # US / Europe
+        "http://in.archive.ubuntu.com/ubuntu"          # India
+
+        # US
+        "http://us.archive.ubuntu.com/ubuntu"          # US
         "http://archive.ubuntu.com/ubuntu"             # US (default)
+
+        # Europe
         "http://de.archive.ubuntu.com/ubuntu"          # Germany
         "http://gb.archive.ubuntu.com/ubuntu"          # UK
+        "http://fr.archive.ubuntu.com/ubuntu"          # France
+        "http://nl.archive.ubuntu.com/ubuntu"          # Netherlands
     )
 
     local fastest_mirror=""
     local fastest_speed=0
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
 
+    # Test all mirrors in parallel (max 3s each)
     for mirror in "${mirrors[@]}"; do
-        # Measure actual download speed (bytes/sec) with a real file (~30KB)
-        local speed
-        speed=$(curl -o /dev/null -sL --max-time 5 -w "%{speed_download}" "${mirror}/dists/noble/Release" 2>/dev/null || echo "0")
-        local speed_kb
-        speed_kb=$(awk "BEGIN {printf \"%d\", $speed / 1024}")
+        (
+            local speed
+            speed=$(curl -o /dev/null -sL --max-time 3 -w "%{speed_download}" "${mirror}/dists/noble/Release" 2>/dev/null || echo "0")
+            local speed_kb
+            speed_kb=$(awk "BEGIN {printf \"%d\", $speed / 1024}")
+            # Write result to temp file (filename = speed for easy sorting)
+            echo "${speed} ${speed_kb} ${mirror}" > "$tmp_dir/$(echo "$mirror" | md5sum | cut -d' ' -f1)"
+        ) &
+    done
+    wait
+
+    # Collect results and find fastest
+    for result_file in "$tmp_dir"/*; do
+        [[ -f "$result_file" ]] || continue
+        local speed speed_kb mirror
+        read -r speed speed_kb mirror < "$result_file"
 
         log_info "  $mirror — ${speed_kb} KB/s"
 
@@ -80,6 +105,7 @@ setup_fastest_mirror() {
             fastest_mirror="$mirror"
         fi
     done
+    rm -rf "$tmp_dir"
 
     local best_kb
     best_kb=$(awk "BEGIN {printf \"%d\", $fastest_speed / 1024}")
