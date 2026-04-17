@@ -271,8 +271,14 @@ install_docker_compose() {
 
     # Create backward-compatible alias so "docker-compose" still works
     if ! command -v docker-compose &>/dev/null; then
-        ln -sf /usr/libexec/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
-        log_info "Created alias: docker-compose -> docker compose"
+        local compose_bin
+        compose_bin=$(find /usr/libexec/docker/cli-plugins /usr/lib/docker/cli-plugins /usr/local/lib/docker/cli-plugins -name docker-compose -type f 2>/dev/null | head -1)
+        if [[ -n "$compose_bin" ]]; then
+            ln -sf "$compose_bin" /usr/local/bin/docker-compose
+            log_info "Created alias: docker-compose -> docker compose ($compose_bin)"
+        else
+            log_warn "Could not find docker-compose plugin binary for alias."
+        fi
     fi
 
     log_info "Docker Compose installed: $(docker compose version)"
@@ -651,7 +657,7 @@ print_summary() {
     echo ""
     log_info "System updated:        OK"
     log_info "Docker:                $(docker --version 2>/dev/null || echo 'N/A')"
-    log_info "Docker Compose:        $(docker-compose --version 2>/dev/null || echo 'N/A')"
+    log_info "Docker Compose:        $(docker compose version 2>/dev/null || echo 'N/A')"
     log_info "SWAP:                  $(swapon --show 2>/dev/null | tail -1 || echo 'N/A')"
     log_info "Firewall (UFW):        $(ufw status 2>/dev/null | head -1 || echo 'N/A')"
     log_info "Nginx:                 $(nginx -v 2>&1 || echo 'N/A')"
