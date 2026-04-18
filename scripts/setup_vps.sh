@@ -615,12 +615,8 @@ configure_timezone() {
     current_tz=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "unknown")
     log_info "Current timezone: $current_tz"
 
-    if [[ "$current_tz" != "UTC" && "$current_tz" != "unknown" ]]; then
-        log_info "Timezone already configured: $current_tz. Skipping."
-        return 0
-    fi
-
-    # Show common timezones and let user choose
+    # Always ask — user may want to override even if a tz is already set.
+    # (Ubuntu VPS thường mặc định Etc/UTC; user thường muốn giờ địa phương.)
     echo ""
     log_info "Common timezones:"
     echo "  1) Asia/Ho_Chi_Minh  (UTC+7, Vietnam)"
@@ -628,25 +624,51 @@ configure_timezone() {
     echo "  3) Asia/Tokyo        (UTC+9, Japan)"
     echo "  4) America/New_York  (UTC-5/-4, US East)"
     echo "  5) Europe/London     (UTC+0/+1, UK)"
-    echo "  6) UTC               (keep default)"
+    echo "  6) UTC               (keep / set to UTC)"
+    echo "  7) Keep current ($current_tz) — skip"
     echo ""
-    prompt "Choose timezone [1-6] (default: 1): "
+    prompt "Choose timezone [1-7] (default: 7 = keep): "
     read -r TZ_CHOICE
 
-    local tz="Asia/Ho_Chi_Minh"
-    case "${TZ_CHOICE:-1}" in
+    local tz=""
+    case "${TZ_CHOICE:-7}" in
         1) tz="Asia/Ho_Chi_Minh" ;;
         2) tz="Asia/Singapore" ;;
         3) tz="Asia/Tokyo" ;;
         4) tz="America/New_York" ;;
         5) tz="Europe/London" ;;
         6) tz="UTC" ;;
-        *) tz="Asia/Ho_Chi_Minh" ;;
+        7|"") log_info "Keeping current timezone: $current_tz"; return 0 ;;
+        *) log_warn "Invalid choice. Keeping current timezone: $current_tz"; return 0 ;;
     esac
 
     timedatectl set-timezone "$tz"
-    log_info "Timezone set to: $tz"
+    log_info "Host timezone set to: $tz"
     log_info "Current time: $(date)"
+
+    # Compute numeric offset for MySQL --default-time-zone
+    local tz_offset
+    tz_offset=$(TZ="$tz" date +%:z 2>/dev/null || echo "+00:00")
+
+    # Reminder for project containers — host tz does NOT auto-propagate
+    echo ""
+    log_warn "============================================="
+    log_warn "  Containers do NOT inherit host timezone!"
+    log_warn "============================================="
+    log_warn "Templates already use \${TZ} / \${MYSQL_TZ_OFFSET}."
+    log_warn "Add these to each project's .env:"
+    echo ""
+    echo "    TZ=$tz"
+    echo "    MYSQL_TZ_OFFSET=$tz_offset    # only needed if you use MySQL"
+    echo ""
+    log_warn "Then restart affected containers:"
+    echo "    cd ~/vps-config/projects/<your-project> && docker compose up -d"
+    echo ""
+    log_warn "Note: MySQL TIMESTAMP cols convert UTC<->session tz."
+    log_warn "      Without MYSQL_TZ_OFFSET, MySQL falls back to SYSTEM."
+    log_warn "      DATETIME cols store literal values (no conversion)."
+    log_warn "      MongoDB always stores UTC; TZ only affects container logs."
+    echo ""
 }
 
 # -----------------------------------------------------------
@@ -666,11 +688,15 @@ print_summary() {
     log_info "Time:                  $(date)"
     echo ""
     log_info "Next steps:"
-    log_info "  1. Copy an example template:  cp -r projects/example-spring-boot projects/my-app"
-    log_info "  2. Edit docker-compose.yml, .env.example, nginx.conf"
-    log_info "  3. Re-run script to auto-link:  sudo bash setup_vps.sh"
+    log_info "  1. Create your project from a template:"
+    log_info "       Spring Boot:  cp -r projects/example-spring-boot projects/my-app"
+    log_info "       Node.js:      cp -r projects/example-node-app    projects/my-app"
+    log_info "       Custom:       mkdir projects/my-app && add docker-compose.yml,"
+    log_info "                     .env.example, nginx.conf (and ci.yml/cd.yml if using CI/CD)"
+    log_info "  2. Edit docker-compose.yml, .env.example, nginx.conf for your app"
+    log_info "  3. Re-run script to auto-link Nginx:  sudo bash scripts/setup_vps.sh"
     log_info "  4. Get SSL cert:    certbot --nginx -d your-domain.com"
-    log_info "  5. Deploy with:     cd projects/my-app && docker-compose up -d"
+    log_info "  5. Deploy:          sudo bash scripts/deploy_project.sh my-app"
     log_info "  6. Manual backup:   sudo bash scripts/backup_db.sh"
     echo ""
 }

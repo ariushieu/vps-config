@@ -11,6 +11,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8080:8080"                                # loopback only — Nginx proxies from outside
+    environment:
+      TZ: ${TZ:-UTC}                                         # JVM + system clock inside container
     env_file:
       - .env
     depends_on:
@@ -30,7 +32,9 @@ services:
     image: mysql:8.0
     container_name: <your-db-container-name>                  # e.g. isocial-mysql
     restart: unless-stopped
+    command: --default-time-zone=${MYSQL_TZ_OFFSET:-+00:00}   # pin MySQL session tz (matches TZ above)
     environment:
+      TZ: ${TZ:-UTC}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE}
       MYSQL_USER: ${MYSQL_USER}

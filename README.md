@@ -69,7 +69,7 @@ This script will automatically:
 |---|------|---------|
 | 1 | Update system | `apt update && apt upgrade` |
 | 2 | Install Docker | Official Docker install script |
-| 3 | Install Docker Compose | Via apt package manager |
+| 3 | Install Docker Compose | Docker Compose **V2** plugin (`docker compose`) with `docker-compose` symlink for back-compat |
 | 4 | Create Docker network | `backend-network` for inter-container communication |
 | 5 | Configure SWAP | 2GB swap file, swappiness = 10 |
 | 6 | Setup Firewall (UFW) | Default deny incoming, allow 22, 80, 443 |
@@ -78,10 +78,21 @@ This script will automatically:
 | 9 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
 | 10 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
 | 11 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
-| 12 | Configure timezone | Interactive timezone selection (default: Asia/Ho_Chi_Minh) |
+| 12 | Configure timezone | Interactive timezone selection (VN, SG, JP, US, UK, UTC, or keep current) |
 
 > **⚠️ Non-standard SSH port:** Some VPS providers use custom SSH ports (e.g. 8686 instead of 22).
 > The script **auto-detects your SSH port** and opens it in UFW, so you won't get locked out.
+
+> **⚠️ Container timezone:** Host timezone does **NOT** propagate into Docker containers.
+> After Step 12, the script prints the two lines you need to add to each project's `.env`:
+>
+> ```
+> TZ=Asia/Ho_Chi_Minh
+> MYSQL_TZ_OFFSET=+07:00     # only if you use MySQL
+> ```
+>
+> Templates already reference `${TZ}` / `${MYSQL_TZ_OFFSET}` in `docker-compose.yml`, so just
+> fill `.env` and run `docker compose up -d`. See [Timezone handling](#timezone-handling) below.
 
 ### Step 3: Deploy a new project (interactive)
 
@@ -297,6 +308,48 @@ All persistent data is stored under `/opt/data/<project-name>/`:
 ```
 
 This makes backup, migration, and cleanup straightforward.
+
+## Timezone handling
+
+Host and container timezones are **independent**. Setting `timedatectl set-timezone` on the host
+does not affect Docker containers — JVM, Node `Date()`, MySQL `NOW()`, etc. all keep using the
+container's clock (default UTC).
+
+This repo's templates solve it with two `.env` variables:
+
+| Variable | Used by | Example (Vietnam) |
+|----------|---------|-------------------|
+| `TZ` | App + DB containers (system clock, JVM, Node, logs) | `Asia/Ho_Chi_Minh` |
+| `MYSQL_TZ_OFFSET` | MySQL `--default-time-zone` flag | `+07:00` |
+
+`docker-compose.yml` already references both:
+
+```yaml
+services:
+  app:
+    environment:
+      TZ: ${TZ:-UTC}
+  mysql:
+    environment:
+      TZ: ${TZ:-UTC}
+    command: --default-time-zone=${MYSQL_TZ_OFFSET:-+00:00}
+```
+
+**Why MySQL needs a separate variable:**
+- MySQL `TIMESTAMP` columns convert UTC ↔ session timezone on read/write
+- Without `--default-time-zone`, MySQL falls back to `SYSTEM` (the container's clock) — works,
+  but breaks if you restore a dump on a host with a different tz
+- Pinning explicit `+07:00` makes behavior deterministic across hosts
+- `DATETIME` columns store literal values (no conversion) and are always safe
+- MongoDB always stores dates in UTC; `TZ` only affects container logs
+
+**To change timezone for an existing project:**
+
+```bash
+cd ~/vps-config/projects/my-app
+nano .env                    # update TZ + MYSQL_TZ_OFFSET
+docker compose up -d         # recreate containers with new env
+```
 
 ## Security
 
