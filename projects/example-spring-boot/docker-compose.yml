@@ -2,6 +2,8 @@
 # Docker Compose - Spring Boot + MySQL (Example Template)
 # Replace placeholder values (<...>) with your actual config
 # Copy .env.example to .env and fill in real credentials
+#
+# Note: App port will be auto-assigned during deploy_project.sh
 # ==========================================================
 
 services:
@@ -10,7 +12,7 @@ services:
     container_name: <your-app-container-name>                 # e.g. isocial-app
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080"                                # loopback only — Nginx proxies from outside
+      - "127.0.0.1:8080:8080"                                # auto-assigned by deploy_project.sh
     environment:
       TZ: ${TZ:-UTC}                                         # JVM + system clock inside container
     env_file:

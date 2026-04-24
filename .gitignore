@@ -49,3 +49,6 @@ get-docker.sh
 my_vps_setup_history.txt
 
 .claude
+
+# ===== Landing page (separate repo) =====
+landing/

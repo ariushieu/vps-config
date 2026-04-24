@@ -117,14 +117,17 @@ The script will ask you:
 1. **Project name** — e.g. `mini-social-be`
 2. **Domain** — e.g. `api.qhieu.dev` (auto-checks DNS)
 3. **Template** — Spring Boot + MySQL or Node.js + MongoDB
+4. **Timezone** — Select from 10 common timezones (VN, TH, SG, JP, HK, US, EU, UTC)
 
 Then it automatically:
 - Copies template → `projects/mini-social-be/`
-- Replaces all placeholders (container names, data paths)
+- **Auto-assigns unique port** (8080 → 8081 → 8082... if already taken)
+- Replaces all placeholders (container names, data paths, app port)
 - Generates `nginx.conf` with your real domain + security headers
 - Symlinks to Nginx sites-enabled + reloads
 - Runs `certbot --nginx -d api.qhieu.dev` for SSL
 - Creates `/opt/data/mini-social-be/` directories
+- Pre-fills `.env.example` with your selected timezone
 
 After that, just fill `.env` and start:
 

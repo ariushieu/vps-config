@@ -145,18 +145,81 @@ choose_template() {
 }
 
 # -----------------------------------------------------------
-# 4. Detect app port from template
+# 4. Detect app port from template & find next available
 # -----------------------------------------------------------
 detect_app_port() {
     local compose_tpl="$PROJECTS_DIR/$TEMPLATE/docker-compose.yml"
     # Extract the first host port from 127.0.0.1:XXXX:YYYY
-    APP_PORT=$(grep -oP '127\.0\.0\.1:\K\d+' "$compose_tpl" | head -1 || echo "8080")
-    log_info "App port detected: $APP_PORT"
+    local default_port
+    default_port=$(grep -oP '127\.0\.0\.1:\K\d+' "$compose_tpl" | head -1 || echo "8080")
+
+    # Find the next available port by scanning existing projects
+    local used_ports
+    used_ports=$(find "$PROJECTS_DIR" -name "docker-compose.yml" -not -path "*/example-*" | xargs grep -ho '127\.0\.0\.1:\K\d+' 2>/dev/null | sort -n | uniq || true)
+
+    APP_PORT="$default_port"
+    if [[ -n "$used_ports" ]]; then
+        # If default port is taken, find the next available one
+        if echo "$used_ports" | grep -q "^$APP_PORT$"; then
+            local next_port=$((APP_PORT + 1))
+            while echo "$used_ports" | grep -q "^$next_port$"; do
+                next_port=$((next_port + 1))
+            done
+            APP_PORT="$next_port"
+        fi
+    fi
+
+    log_info "App port assigned: 127.0.0.1:$APP_PORT (template default: $default_port)"
 }
 
 # -----------------------------------------------------------
-# 5. Create project from template
+# 5. Ask for timezone
 # -----------------------------------------------------------
+ask_timezone() {
+    echo ""
+    log_info "Available timezones:"
+    echo ""
+    local -a timezones=(
+        "1) Asia/Ho_Chi_Minh (Vietnam, UTC+7)"
+        "2) Asia/Bangkok (Thailand, UTC+7)"
+        "3) Asia/Singapore (Singapore, UTC+8)"
+        "4) Asia/Tokyo (Japan, UTC+9)"
+        "5) Asia/Hong_Kong (Hong Kong, UTC+8)"
+        "6) America/New_York (US East, UTC-5/-4)"
+        "7) America/Los_Angeles (US West, UTC-8/-7)"
+        "8) Europe/London (UK, UTC+0/+1)"
+        "9) Europe/Berlin (Germany, UTC+1/+2)"
+        "10) UTC (UTC+0)"
+    )
+
+    for tz in "${timezones[@]}"; do
+        echo "  $tz"
+    done
+
+    echo ""
+    prompt "Choose timezone [1-10]: "
+    read -r TZ_CHOICE
+
+    case "$TZ_CHOICE" in
+        1)  TZ="Asia/Ho_Chi_Minh"      MYSQL_TZ_OFFSET="+07:00" ;;
+        2)  TZ="Asia/Bangkok"          MYSQL_TZ_OFFSET="+07:00" ;;
+        3)  TZ="Asia/Singapore"        MYSQL_TZ_OFFSET="+08:00" ;;
+        4)  TZ="Asia/Tokyo"            MYSQL_TZ_OFFSET="+09:00" ;;
+        5)  TZ="Asia/Hong_Kong"        MYSQL_TZ_OFFSET="+08:00" ;;
+        6)  TZ="America/New_York"      MYSQL_TZ_OFFSET="-05:00" ;;
+        7)  TZ="America/Los_Angeles"   MYSQL_TZ_OFFSET="-08:00" ;;
+        8)  TZ="Europe/London"         MYSQL_TZ_OFFSET="+00:00" ;;
+        9)  TZ="Europe/Berlin"         MYSQL_TZ_OFFSET="+01:00" ;;
+        10) TZ="UTC"                   MYSQL_TZ_OFFSET="+00:00" ;;
+        *)
+            log_error "Invalid choice."
+            ask_timezone
+            return
+            ;;
+    esac
+
+    log_info "Timezone: $TZ (MySQL offset: $MYSQL_TZ_OFFSET)"
+}
 create_project() {
     log_section "Creating project: $PROJECT_NAME"
 
@@ -170,7 +233,14 @@ create_project() {
         sed -i "s|<your-app-container-name>|${PROJECT_NAME}-app|g" "$compose_file"
         sed -i "s|<your-db-container-name>|${PROJECT_NAME}-db|g" "$compose_file"
         sed -i "s|<your-dockerhub-username>/<your-app-name>|<your-dockerhub-username>/${PROJECT_NAME}|g" "$compose_file"
-        log_info "docker-compose.yml placeholders replaced."
+
+        # Replace port placeholders with assigned ports
+        # For Spring Boot template (MySQL): 8080 -> assigned port
+        sed -i "s|127\.0\.0\.1:8080:|127.0.0.1:${APP_PORT}:|g" "$compose_file"
+        # For Node.js template (MongoDB): 3000 -> assigned port
+        sed -i "s|127\.0\.0\.1:3000:|127.0.0.1:${APP_PORT}:|g" "$compose_file"
+
+        log_info "docker-compose.yml placeholders replaced (ports + project names)."
     fi
 }
 
@@ -304,7 +374,37 @@ prepare_data_dirs() {
 }
 
 # -----------------------------------------------------------
-# 10. Summary
+# 10. Create .env.example with timezone
+# -----------------------------------------------------------
+create_env_example() {
+    local env_file="$PROJECT_DIR/.env.example"
+
+    # Check if template has .env.example
+    if [[ ! -f "$env_file" ]]; then
+        log_warn "No .env.example found in template. Skipping."
+        return 0
+    fi
+
+    # Update or add timezone variables
+    if grep -q "^TZ=" "$env_file"; then
+        # Already has TZ, update the values
+        sed -i "s|^TZ=.*|TZ=$TZ|g" "$env_file"
+        # Also update MYSQL_TZ_OFFSET if present
+        sed -i "s|^MYSQL_TZ_OFFSET=.*|MYSQL_TZ_OFFSET=$MYSQL_TZ_OFFSET|g" "$env_file"
+    else
+        # Add timezone variables
+        cat >> "$env_file" <<EOF
+
+# Timezone configuration (auto-set by deploy_project.sh)
+TZ=$TZ
+MYSQL_TZ_OFFSET=$MYSQL_TZ_OFFSET
+EOF
+    fi
+    log_info "Timezone set in .env.example: TZ=$TZ"
+}
+
+# -----------------------------------------------------------
+# 11. Summary
 # -----------------------------------------------------------
 print_summary() {
     log_section "Deployment Ready!"
@@ -315,6 +415,7 @@ print_summary() {
     log_info "Directory:   $PROJECT_DIR"
     log_info "Nginx:       /etc/nginx/sites-enabled/$PROJECT_NAME"
     log_info "App port:    127.0.0.1:$APP_PORT (loopback)"
+    log_info "Timezone:    $TZ (MySQL offset: $MYSQL_TZ_OFFSET)"
     echo ""
     log_info "Next steps:"
     log_info "  1. Edit docker-compose.yml (set your Docker image):"
@@ -338,11 +439,13 @@ main() {
     ask_domain
     choose_template
     detect_app_port
+    ask_timezone
     create_project
     generate_nginx_config
     link_and_reload_nginx
     setup_ssl
     prepare_data_dirs
+    create_env_example
     print_summary
 }
 
