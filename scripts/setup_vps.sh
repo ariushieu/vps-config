@@ -549,7 +549,6 @@ prepare_data_volumes() {
     log_section "Step 9: Preparing Data Volume Directories"
 
     local PROJECTS_DIR="$REPO_DIR/projects"
-    local DATA_ROOT="/opt/data"
 
     if [[ ! -d "$PROJECTS_DIR" ]]; then
         log_warn "Projects directory not found: $PROJECTS_DIR. Skipping."

@@ -155,7 +155,7 @@ detect_app_port() {
 
     # Find the next available port by scanning existing projects
     local used_ports
-    used_ports=$(find "$PROJECTS_DIR" -name "docker-compose.yml" -not -path "*/example-*" | xargs grep -ho '127\.0\.0\.1:\K\d+' 2>/dev/null | sort -n | uniq || true)
+    used_ports=$(find "$PROJECTS_DIR" -name "docker-compose.yml" -not -path "*/example-*" -print0 | xargs -0 grep -ho '127\.0\.0\.1:\K\d+' 2>/dev/null | sort -n | uniq || true)
 
     APP_PORT="$default_port"
     if [[ -n "$used_ports" ]]; then
