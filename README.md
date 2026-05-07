@@ -360,13 +360,19 @@ This repo follows security best practices:
 
 - **Ports**: App & DB bind to `127.0.0.1` only — not reachable from internet
 - **Firewall**: UFW `default deny incoming`, only 22/80/443 open
-- **Fail2Ban**: SSH brute-force protection (3 retries → ban 1h)
-- **Nginx**: Security headers, rate limiting, `server_tokens off`
+- **Fail2Ban**: SSH brute-force protection (3 retries → ban 1h) + Nginx rate-limit jail (5 violations in 10m → ban 1h via UFW)
+- **Nginx**: Security headers, rate limiting (`burst=30 nodelay`), `server_tokens off`, malicious scan blocker (`.env`, `.git`, `.ssh`, `.php`, `.sql`, `.bak` → instant `444` drop)
 - **Docker**: Log rotation (10MB x 3), resource limits (memory/cpu)
 - **Secrets**: `.env` files gitignored, never committed
 - **SSL**: Auto-renewed via Certbot systemd timer
 - **Updates**: `unattended-upgrades` for automatic security patches
 - **Backups**: Daily DB dump, integrity verified, 7-day retention
+- **Deployment**: `docker compose down --remove-orphans` before recreate to prevent ghost processes
+
+> **Note on `dhcpcd` user in `ps aux`:** If you see processes owned by the `dhcpcd` user, this is
+> expected behavior caused by Linux host UID mapping. Docker container users (e.g. UID 101 for nginx)
+> map to host usernames by `/etc/passwd` lookup — UID 101 happens to be `dhcpcd` on many systems.
+> These are your normal containerized processes, not a separate service.
 
 ## License
 

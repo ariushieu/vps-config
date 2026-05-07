@@ -66,8 +66,9 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd ~/vps-config/projects/<your-project-name>
-            docker-compose pull app
-            docker-compose up -d --force-recreate app
+            docker compose pull app
+            docker compose down --remove-orphans
+            docker compose up -d --force-recreate app
 
       - name: Health check
         uses: appleboy/ssh-action@v1.2.2

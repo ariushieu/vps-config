@@ -276,8 +276,15 @@ server {
     server_tokens off;
     client_max_body_size 10M;
 
+    # --- Block malicious scans (before location / to avoid consuming rate-limit quota) ---
+    location ~ /\.(env|git|ssh|docker|config|php|sql|bak) {
+        access_log off;
+        log_not_found off;
+        return 444;
+    }
+
     location / {
-        limit_req zone=${PROJECT_NAME}_limit burst=20 nodelay;
+        limit_req zone=${PROJECT_NAME}_limit burst=30 nodelay;
 
         proxy_pass http://127.0.0.1:${APP_PORT};
         proxy_set_header Host \$host;

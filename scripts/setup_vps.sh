@@ -433,6 +433,24 @@ JAIL
         log_info "Fail2Ban jail.local created (SSH: 3 retries, ban 1h)."
     fi
 
+    # Create Nginx rate-limit jail (ban bots that trigger limit_req)
+    local NGINX_JAIL="/etc/fail2ban/jail.d/nginx-limit.local"
+    if [[ -f "$NGINX_JAIL" ]]; then
+        log_warn "$NGINX_JAIL already exists. Skipping."
+    else
+        cat > "$NGINX_JAIL" <<'NGINXJAIL'
+[nginx-limit-req]
+enabled  = true
+filter   = nginx-limit-req
+action   = ufw[name=nginx-limit, deny=deny]
+logpath  = /var/log/nginx/error.log
+findtime = 10m
+bantime  = 1h
+maxretry = 5
+NGINXJAIL
+        log_info "Fail2Ban nginx-limit jail created (5 retries in 10m → ban 1h via UFW)."
+    fi
+
     systemctl enable fail2ban
     systemctl restart fail2ban
     log_info "Fail2Ban installed and running."
