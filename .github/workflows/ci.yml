@@ -1,0 +1,42 @@
+# ==========================================================
+# CI - Lint & Validate
+# Runs ShellCheck on bash scripts and validates YAML templates
+# ==========================================================
+
+name: CI - Lint & Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: scripts
+          severity: warning
+
+  yaml-validate:
+    name: YAML Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Lint YAML templates
+        run: |
+          yamllint -d '{extends: default, rules: {line-length: {max: 200}, truthy: disable, comments-indentation: disable}}' \
+            projects/example-spring-boot/*.yml \
+            projects/example-node-app/*.yml
