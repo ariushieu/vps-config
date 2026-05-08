@@ -17,6 +17,10 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - "**/*.md"
+      - ".env.example"
+      - "docs/**"
 
 jobs:
   deploy:
@@ -65,10 +69,10 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
+            set -eu
             cd ~/vps-config/projects/<your-project-name>
             docker compose pull app
-            docker compose down --remove-orphans
-            docker compose up -d --force-recreate app
+            docker compose up -d --no-deps --force-recreate app
 
       - name: Health check
         uses: appleboy/ssh-action@v1.2.2
@@ -77,9 +81,14 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            sleep 10
-            docker inspect --format='{{.State.Health.Status}}' <your-app-container-name> 2>/dev/null || \
-            docker inspect --format='{{.State.Status}}' <your-app-container-name>
+            set -eu
+            sleep 20
+            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' <your-app-container-name>)
+            echo "Container status: $status"
+            if [ "$status" != "healthy" ] && [ "$status" != "running" ]; then
+              docker logs --tail=100 <your-app-container-name>
+              exit 1
+            fi
 
       # --- Cleanup ---
       - name: Clean up old Docker images

@@ -147,8 +147,11 @@ docker ps
 # View app logs (from project dir)
 cd projects/my-app && docker-compose logs -f
 
-# Restart services
-docker-compose down && docker-compose up -d
+# Redeploy app without touching database
+docker compose pull app && docker compose up -d --no-deps --force-recreate app
+
+# Full stack restart only when you intentionally want to restart DB too
+docker compose up -d
 
 # Check swap status
 free -h
@@ -367,7 +370,7 @@ This repo follows security best practices:
 - **SSL**: Auto-renewed via Certbot systemd timer
 - **Updates**: `unattended-upgrades` for automatic security patches
 - **Backups**: Daily DB dump, integrity verified, 7-day retention
-- **Deployment**: `docker compose down --remove-orphans` before recreate to prevent ghost processes
+- **Deployment**: CD recreates only the `app` service with `--no-deps`, so routine deploys do not restart the database
 
 > **Note on `dhcpcd` user in `ps aux`:** If you see processes owned by the `dhcpcd` user, this is
 > expected behavior caused by Linux host UID mapping. Docker container users (e.g. UID 101 for nginx)
