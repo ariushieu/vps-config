@@ -631,7 +631,10 @@ setup_backup_cron() {
     log_section "Step 10: Setting up Daily Database Backup"
 
     local BACKUP_SCRIPT="$REPO_DIR/scripts/backup_db.sh"
-    local CRON_LINE="0 2 * * * bash $BACKUP_SCRIPT $REPO_DIR >> /var/log/backup_db.log 2>&1"
+    local RESTORE_SCRIPT="$REPO_DIR/scripts/restore_mysql.sh"
+    local MONGO_RESTORE_SCRIPT="$REPO_DIR/scripts/restore_mongo.sh"
+    local LOG_FILE="/var/log/backup_db.log"
+    local CRON_LINE="0 2 * * * /bin/bash '$BACKUP_SCRIPT' '$REPO_DIR' >> '$LOG_FILE' 2>&1"
 
     if [[ ! -f "$BACKUP_SCRIPT" ]]; then
         log_warn "Backup script not found: $BACKUP_SCRIPT. Skipping."
@@ -639,20 +642,34 @@ setup_backup_cron() {
     fi
 
     chmod +x "$BACKUP_SCRIPT"
-
-    # Check if cron job already exists
-    if crontab -l 2>/dev/null | grep -qF "backup_db.sh"; then
-        log_warn "Backup cron job already exists. Skipping."
-        crontab -l 2>/dev/null | grep "backup_db.sh"
-        return 0
+    if [[ -f "$RESTORE_SCRIPT" ]]; then
+        chmod +x "$RESTORE_SCRIPT"
+    fi
+    if [[ -f "$MONGO_RESTORE_SCRIPT" ]]; then
+        chmod +x "$MONGO_RESTORE_SCRIPT"
     fi
 
-    # Add cron job
-    (crontab -l 2>/dev/null || true; echo "$CRON_LINE") | crontab -
+    touch "$LOG_FILE"
+    chmod 640 "$LOG_FILE"
+
+    local current_cron
+    current_cron=$(crontab -l 2>/dev/null || true)
+
+    if grep -qF "backup_db.sh" <<< "$current_cron"; then
+        log_warn "Existing backup cron job found. Replacing it with the current safe command."
+    fi
+
+    {
+        if [[ -n "$current_cron" ]]; then
+            grep -vF "backup_db.sh" <<< "$current_cron" || true
+        fi
+        echo "$CRON_LINE"
+    } | crontab -
+
     log_info "Cron job added: daily at 02:00 AM"
     log_info "  $CRON_LINE"
     log_info "Backups stored at: /opt/backups/ (keep last 7 days)"
-    log_info "Logs at: /var/log/backup_db.log"
+    log_info "Logs at: $LOG_FILE"
 }
 
 # -----------------------------------------------------------

@@ -171,7 +171,7 @@ ls -la /opt/data/
 sudo bash scripts/backup_db.sh
 
 # Check backup logs
-tail -50 /var/log/backup_db.log
+sudo tail -50 /var/log/backup_db.log
 
 # List backups
 ls -lh /opt/backups/
@@ -182,14 +182,16 @@ ls -lh /opt/backups/
 The setup script automatically installs a **daily cron job** at 02:00 AM:
 
 ```
-0 2 * * * bash ~/vps-config/scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
+0 2 * * * /bin/bash '/root/vps-config/scripts/backup_db.sh' '/root/vps-config' >> '/var/log/backup_db.log' 2>&1
 ```
 
 **How it works:**
 - Scans all project folders (skips `example-*` templates)
 - Detects running MySQL/MongoDB containers
-- Dumps databases via `mysqldump` / `mongodump`
+- Dumps the MySQL schema named by `MYSQL_DATABASE` via `mysqldump`
+- Dumps the MongoDB database named by `MONGO_INITDB_DATABASE` via `mongodump`
 - Compresses with gzip
+- Uses a lock file to avoid overlapping cron/manual backup runs
 - Keeps last **7 days**, auto-deletes older backups
 
 **Backup location:**
@@ -209,15 +211,25 @@ The setup script automatically installs a **daily cron job** at 02:00 AM:
 **Restore example:**
 
 ```bash
-# MySQL
-gunzip -c /opt/backups/my-app/mysql/my-app_mysql_2026-04-15_02-00-00.sql.gz | \
-    docker exec -i <mysql-container> mysql -u root -p<password>
+# MySQL - use the guarded restore helper.
+# It rejects dumps that contain mysql system schema, user, or privilege statements.
+sudo bash scripts/restore_mysql.sh \
+    /opt/backups/my-app/mysql/my-app_mysql_2026-04-15_02-00-00.sql.gz \
+    <mysql-container>
 
-# MongoDB
-tar -xzf /opt/backups/my-api/mongo/my-api_mongo_2026-04-15_02-00-00.tar.gz -C /tmp
-docker cp /tmp/my-api_mongo_2026-04-15_02-00-00 <mongo-container>:/tmp/restore
-docker exec <mongo-container> mongorestore /tmp/restore
+# MongoDB - use the guarded restore helper.
+# It rejects dumps that contain admin, config, or local system databases.
+sudo bash scripts/restore_mongo.sh \
+    /opt/backups/my-api/mongo/my-api_mongo_2026-04-15_02-00-00.tar.gz \
+    <mongo-container>
 ```
+
+**Database backup/restore safety:**
+- MySQL backups are scoped to the single schema in `MYSQL_DATABASE`; the script refuses empty values, system schemas, and unsafe database names.
+- Backups are deleted if the generated SQL contains `mysql`, `information_schema`, `performance_schema`, `sys`, `CREATE USER`, `GRANT`, or similar global privilege statements.
+- Do not restore legacy dumps made with `mysqldump --all-databases` into a new container. Those dumps can overwrite `mysql.user`, replace Docker-created passwords, break the app login, and lock you out of MySQL.
+- MongoDB backups are scoped to `MONGO_INITDB_DATABASE`; the script refuses empty values and system databases (`admin`, `config`, `local`).
+- Do not restore legacy all-database MongoDB dumps into a new container. They can restore system database metadata from the old host.
 
 ## Adding a New Project
 
