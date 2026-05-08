@@ -119,6 +119,59 @@ cleanup_old_backups() {
 }
 
 # -----------------------------------------------------------
+# Detect Compose-owned database containers
+# -----------------------------------------------------------
+container_belongs_to_project() {
+    local container="$1"
+    local project_name="$2"
+    local project_dir="$3"
+    local compose_file="$4"
+
+    if grep -qF "$container" "$compose_file" 2>/dev/null; then
+        return 0
+    fi
+
+    local label_project label_working_dir label_config_files
+    label_project=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)
+    label_working_dir=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)
+    label_config_files=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 2>/dev/null || true)
+
+    if [[ "$label_project" == "$project_name" ]]; then
+        return 0
+    fi
+
+    if [[ -n "$label_working_dir" && "$label_working_dir" != "<no value>" ]]; then
+        local project_real label_working_real
+        project_real=$(realpath "$project_dir" 2>/dev/null || echo "${project_dir%/}")
+        label_working_real=$(realpath "$label_working_dir" 2>/dev/null || echo "${label_working_dir%/}")
+        if [[ "$label_working_real" == "$project_real" ]]; then
+            return 0
+        fi
+    fi
+
+    if [[ -n "$label_config_files" && "$label_config_files" != "<no value>" && "$label_config_files" == *"$compose_file"* ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+detect_db_containers() {
+    local project_name="$1"
+    local project_dir="$2"
+    local compose_file="$3"
+    local image_pattern="$4"
+
+    docker ps --format '{{.Names}}' | while read -r name; do
+        local image
+        image=$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null || true)
+        if [[ "$image" == *"$image_pattern"* ]] && container_belongs_to_project "$name" "$project_name" "$project_dir" "$compose_file"; then
+            echo "$name"
+        fi
+    done | sort -u
+}
+
+# -----------------------------------------------------------
 # Scan projects and run backups
 # -----------------------------------------------------------
 run_backups() {
@@ -149,15 +202,7 @@ run_backups() {
 
         # Detect MySQL containers
         local mysql_containers
-        mysql_containers=$(docker ps --format '{{.Names}}' | while read -r name; do
-            # Check if this container uses mysql image and belongs to this project's compose
-            if docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | grep -q "mysql"; then
-                # Verify it's running from this project directory
-                if grep -q "$name" "$compose_file" 2>/dev/null; then
-                    echo "$name"
-                fi
-            fi
-        done || true)
+        mysql_containers=$(detect_db_containers "$project_name" "$project_dir" "$compose_file" "mysql" || true)
 
         for container in $mysql_containers; do
             backup_mysql "$container" "$project_name" && ((backup_count++)) || true
@@ -165,13 +210,7 @@ run_backups() {
 
         # Detect MongoDB containers
         local mongo_containers
-        mongo_containers=$(docker ps --format '{{.Names}}' | while read -r name; do
-            if docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | grep -q "mongo"; then
-                if grep -q "$name" "$compose_file" 2>/dev/null; then
-                    echo "$name"
-                fi
-            fi
-        done || true)
+        mongo_containers=$(detect_db_containers "$project_name" "$project_dir" "$compose_file" "mongo" || true)
 
         for container in $mongo_containers; do
             backup_mongo "$container" "$project_name" && ((backup_count++)) || true

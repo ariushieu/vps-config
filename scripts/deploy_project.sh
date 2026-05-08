@@ -242,6 +242,15 @@ create_project() {
 
         log_info "docker-compose.yml placeholders replaced (ports + project names)."
     fi
+
+    local cd_file="$PROJECT_DIR/cd.yml"
+    if [[ -f "$cd_file" ]]; then
+        sed -i "s|<your-project-name>|$PROJECT_NAME|g" "$cd_file"
+        sed -i "s|<your-app-container-name>|${PROJECT_NAME}-app|g" "$cd_file"
+        sed -i "s|<your-dockerhub-username>/<your-app-name>|<your-dockerhub-username>/${PROJECT_NAME}|g" "$cd_file"
+
+        log_info "cd.yml placeholders replaced (project + container names)."
+    fi
 }
 
 # -----------------------------------------------------------
@@ -432,8 +441,8 @@ print_summary() {
     log_info "     cp $PROJECT_DIR/.env.example $PROJECT_DIR/.env"
     log_info "     nano $PROJECT_DIR/.env"
     log_info ""
-    log_info "  3. Start services:"
-    log_info "     cd $PROJECT_DIR && docker-compose up -d"
+    log_info "  3. Start services for the first time:"
+    log_info "     cd $PROJECT_DIR && docker compose up -d"
     echo ""
 }
 

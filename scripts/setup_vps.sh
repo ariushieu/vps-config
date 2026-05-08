@@ -205,7 +205,8 @@ install_docker() {
     log_section "Step 2: Installing Docker"
 
     if command -v docker &>/dev/null; then
-        log_warn "Docker is already installed: $(docker --version). Skipping."
+        log_warn "Docker is already installed: $(docker --version). Skipping install."
+        configure_docker_logging
         return 0
     fi
 
@@ -226,14 +227,45 @@ install_docker() {
 configure_docker_logging() {
     local DAEMON_JSON="/etc/docker/daemon.json"
 
-    if [[ -f "$DAEMON_JSON" ]] && grep -q "max-size" "$DAEMON_JSON"; then
+    if [[ -f "$DAEMON_JSON" ]] && grep -q '"max-size"[[:space:]]*:[[:space:]]*"10m"' "$DAEMON_JSON" && grep -q '"max-file"[[:space:]]*:[[:space:]]*"3"' "$DAEMON_JSON"; then
         log_warn "Docker log rotation already configured. Skipping."
         return 0
     fi
 
     log_info "Configuring Docker log rotation..."
     mkdir -p /etc/docker
-    cat > "$DAEMON_JSON" <<'DOCKER_CONF'
+
+    if [[ -f "$DAEMON_JSON" ]]; then
+        cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"
+    fi
+
+    if command -v python3 &>/dev/null; then
+        python3 - "$DAEMON_JSON" <<'PY'
+import json
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+try:
+    data = json.loads(path.read_text()) if path.exists() and path.stat().st_size else {}
+except json.JSONDecodeError:
+    data = {}
+
+if not isinstance(data, dict):
+    data = {}
+
+opts = data.get("log-opts")
+if not isinstance(opts, dict):
+    opts = {}
+opts["max-size"] = "10m"
+opts["max-file"] = "3"
+
+data["log-driver"] = "json-file"
+data["log-opts"] = opts
+path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+    else
+        cat > "$DAEMON_JSON" <<'DOCKER_CONF'
 {
   "log-driver": "json-file",
   "log-opts": {
@@ -242,6 +274,7 @@ configure_docker_logging() {
   }
 }
 DOCKER_CONF
+    fi
 
     systemctl restart docker
     log_info "Docker log rotation set: max 10MB x 3 files per container."
@@ -679,7 +712,9 @@ configure_timezone() {
     echo "    MYSQL_TZ_OFFSET=$tz_offset    # only needed if you use MySQL"
     echo ""
     log_warn "Then restart affected containers:"
-    echo "    cd ~/vps-config/projects/<your-project> && docker compose up -d"
+    echo "    cd ~/vps-config/projects/<your-project>"
+    echo "    docker compose up -d --no-deps --force-recreate app    # app-only TZ change"
+    echo "    docker compose up -d                                  # MYSQL_TZ_OFFSET change; restarts DB"
     echo ""
     log_warn "Note: MySQL TIMESTAMP cols convert UTC<->session tz."
     log_warn "      Without MYSQL_TZ_OFFSET, MySQL falls back to SYSTEM."

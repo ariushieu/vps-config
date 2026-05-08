@@ -92,7 +92,7 @@ This script will automatically:
 > ```
 >
 > Templates already reference `${TZ}` / `${MYSQL_TZ_OFFSET}` in `docker-compose.yml`, so just
-> fill `.env` and run `docker compose up -d`. See [Timezone handling](#timezone-handling) below.
+> fill `.env` and run `docker compose up -d` for the first start. See [Timezone handling](#timezone-handling) below.
 
 ### Step 3: Deploy a new project (interactive)
 
@@ -135,8 +135,10 @@ After that, just fill `.env` and start:
 cd projects/mini-social-be
 cp .env.example .env
 nano .env                    # fill real credentials
-docker-compose up -d
+docker compose up -d
 ```
+
+> **MySQL credentials:** `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, and `MYSQL_PASSWORD` initialize the MySQL data directory only on the first start. If `/opt/data/<project>/mysql` already exists, changing `.env` does not change database passwords; update users inside MySQL or intentionally recreate/restore the data directory.
 
 ## Common Commands
 
@@ -231,7 +233,7 @@ nano projects/my-new-app/.env.example
 sudo bash scripts/setup_vps.sh    # auto-link nginx + create data dirs
 cd projects/my-new-app
 cp .env.example .env && nano .env
-docker-compose up -d
+docker compose up -d
 sudo certbot --nginx -d your-domain.com
 ```
 
@@ -245,7 +247,11 @@ Each project template includes **CI/CD workflow files** (`ci.yml` + `cd.yml`). T
 # In your project source code repo:
 mkdir -p .github/workflows
 
-# Copy from vps-config template (pick your stack):
+# If you used deploy_project.sh, copy from the generated project folder:
+cp ~/vps-config/projects/mini-social-be/ci.yml .github/workflows/ci.yml
+cp ~/vps-config/projects/mini-social-be/cd.yml .github/workflows/cd.yml
+
+# If you are setting up manually, copy from the stack template instead:
 cp ~/vps-config/projects/example-spring-boot/ci.yml .github/workflows/ci.yml
 cp ~/vps-config/projects/example-spring-boot/cd.yml .github/workflows/cd.yml
 # or for Node.js:
@@ -255,7 +261,7 @@ cp ~/vps-config/projects/example-node-app/cd.yml .github/workflows/cd.yml
 
 ### Replace placeholders
 
-Open each file and replace `<...>` values:
+Open each file and replace any remaining `<...>` values:
 
 | Placeholder | Example |
 |-------------|---------|
@@ -353,8 +359,11 @@ services:
 
 ```bash
 cd ~/vps-config/projects/my-app
-nano .env                    # update TZ + MYSQL_TZ_OFFSET
-docker compose up -d         # recreate containers with new env
+nano .env                    # update TZ for app-only changes
+docker compose up -d --no-deps --force-recreate app
+
+# If you change MYSQL_TZ_OFFSET, schedule DB downtime and restart the stack:
+# docker compose up -d
 ```
 
 ## Security
