@@ -213,16 +213,22 @@ The setup script automatically installs a **daily cron job** at 02:00 AM:
 ```bash
 # MySQL - use the guarded restore helper.
 # It rejects dumps that contain mysql system schema, user, or privilege statements.
+# Prompts for 'yes' before overwriting; pass --yes for scripted use.
 sudo bash scripts/restore_mysql.sh \
     /opt/backups/my-app/mysql/my-app_mysql_2026-04-15_02-00-00.sql.gz \
     <mysql-container>
 
 # MongoDB - use the guarded restore helper.
 # It rejects dumps that contain admin, config, or local system databases.
+# Prompts for 'yes' before running mongorestore --drop on the target.
 sudo bash scripts/restore_mongo.sh \
     /opt/backups/my-api/mongo/my-api_mongo_2026-04-15_02-00-00.tar.gz \
     <mongo-container>
 ```
+
+**Restore flags:**
+- `--yes` / `-y` — skip the interactive confirmation (e.g. inside automation).
+- `--force` — bypass the forbidden-pattern scan. Only use when you trust the dump and the scan is producing a false positive (e.g. application data containing SQL-like text).
 
 **Database backup/restore safety:**
 - MySQL backups are scoped to the single schema in `MYSQL_DATABASE`; the script refuses empty values, system schemas, and unsafe database names.

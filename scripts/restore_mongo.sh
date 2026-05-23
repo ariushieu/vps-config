@@ -5,7 +5,11 @@
 #              rejecting system databases.
 #
 # Usage:
-#   sudo bash restore_mongo.sh <dump.tar.gz> <mongo-container>
+#   sudo bash restore_mongo.sh [--yes] [--force] <dump.tar.gz> <mongo-container>
+#
+# Flags:
+#   --yes    Skip the interactive confirmation prompt (for scripted use).
+#   --force  Skip the system-database scan (only when you fully trust the dump).
 # ============================================================
 
 set -euo pipefail
@@ -22,7 +26,24 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $(date '+%Y-%m-%d %H:%M:%S') $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"; }
 
 usage() {
-    echo "Usage: sudo bash $0 <dump.tar.gz> <mongo-container>"
+    echo "Usage: sudo bash $0 [--yes] [--force] <dump.tar.gz> <mongo-container>"
+}
+
+confirm_restore() {
+    local dump_file="$1"
+    local container="$2"
+
+    log_warn "About to restore MongoDB dump with --drop:"
+    log_warn "  Dump file: $dump_file"
+    log_warn "  Target container: $container"
+    log_warn "Every collection in the target databases will be dropped before restore."
+
+    local reply
+    read -r -p "Type 'yes' to continue: " reply
+    if [[ "$reply" != "yes" ]]; then
+        log_error "Aborted by user."
+        exit 1
+    fi
 }
 
 validate_dump_file() {
@@ -119,13 +140,50 @@ restore_mongo_dump() {
 }
 
 main() {
-    if [[ $# -ne 2 ]]; then
+    local assume_yes=0
+    local force=0
+    local -a positional=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y)
+                assume_yes=1
+                shift
+                ;;
+            --force)
+                force=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                while [[ $# -gt 0 ]]; do
+                    positional+=("$1")
+                    shift
+                done
+                ;;
+            -*)
+                log_error "Unknown flag: $1"
+                usage
+                exit 1
+                ;;
+            *)
+                positional+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ${#positional[@]} -ne 2 ]]; then
         usage
         exit 1
     fi
 
-    local dump_file="$1"
-    local container="$2"
+    local dump_file="${positional[0]}"
+    local container="${positional[1]}"
     local temp_dir
     local restore_root
 
@@ -134,10 +192,22 @@ main() {
 
     validate_dump_file "$dump_file"
     validate_archive_paths "$dump_file"
-    tar -xzf "$dump_file" -C "$temp_dir"
-    validate_safe_mongo_dump "$temp_dir"
-    restore_root=$(resolve_restore_root "$temp_dir")
     validate_container "$container"
+
+    tar -xzf "$dump_file" -C "$temp_dir"
+
+    if [[ $force -eq 1 ]]; then
+        log_warn "--force set; skipping system-database scan on dump"
+    else
+        validate_safe_mongo_dump "$temp_dir"
+    fi
+
+    restore_root=$(resolve_restore_root "$temp_dir")
+
+    if [[ $assume_yes -ne 1 ]]; then
+        confirm_restore "$dump_file" "$container"
+    fi
+
     restore_mongo_dump "$restore_root" "$container"
 }
 

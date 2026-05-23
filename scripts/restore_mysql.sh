@@ -5,7 +5,11 @@
 #              that can overwrite Docker-created users/passwords.
 #
 # Usage:
-#   sudo bash restore_mysql.sh <dump.sql.gz|dump.sql> <mysql-container>
+#   sudo bash restore_mysql.sh [--yes] [--force] <dump.sql.gz|dump.sql> <mysql-container>
+#
+# Flags:
+#   --yes    Skip the interactive confirmation prompt (for scripted use).
+#   --force  Skip the forbidden-pattern scan (only when you fully trust the dump).
 #
 # Example:
 #   sudo bash scripts/restore_mysql.sh \
@@ -27,7 +31,24 @@ log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $(date '+%Y-%m-%d %H:%M:%S') $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') $1"; }
 
 usage() {
-    echo "Usage: sudo bash $0 <dump.sql.gz|dump.sql> <mysql-container>"
+    echo "Usage: sudo bash $0 [--yes] [--force] <dump.sql.gz|dump.sql> <mysql-container>"
+}
+
+confirm_restore() {
+    local dump_file="$1"
+    local container="$2"
+
+    log_warn "About to restore MySQL dump:"
+    log_warn "  Dump file: $dump_file"
+    log_warn "  Target container: $container"
+    log_warn "This will overwrite existing tables in the target database."
+
+    local reply
+    read -r -p "Type 'yes' to continue: " reply
+    if [[ "$reply" != "yes" ]]; then
+        log_error "Aborted by user."
+        exit 1
+    fi
 }
 
 stream_dump() {
@@ -104,17 +125,64 @@ restore_mysql_dump() {
 }
 
 main() {
-    if [[ $# -ne 2 ]]; then
+    local assume_yes=0
+    local force=0
+    local -a positional=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y)
+                assume_yes=1
+                shift
+                ;;
+            --force)
+                force=1
+                shift
+                ;;
+            -h|--help)
+                usage
+                exit 0
+                ;;
+            --)
+                shift
+                while [[ $# -gt 0 ]]; do
+                    positional+=("$1")
+                    shift
+                done
+                ;;
+            -*)
+                log_error "Unknown flag: $1"
+                usage
+                exit 1
+                ;;
+            *)
+                positional+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [[ ${#positional[@]} -ne 2 ]]; then
         usage
         exit 1
     fi
 
-    local dump_file="$1"
-    local container="$2"
+    local dump_file="${positional[0]}"
+    local container="${positional[1]}"
 
     validate_dump_file "$dump_file"
-    validate_safe_mysql_dump "$dump_file"
     validate_container "$container"
+
+    if [[ $force -eq 1 ]]; then
+        log_warn "--force set; skipping forbidden-pattern scan on dump"
+    else
+        validate_safe_mysql_dump "$dump_file"
+    fi
+
+    if [[ $assume_yes -ne 1 ]]; then
+        confirm_restore "$dump_file" "$container"
+    fi
+
     restore_mysql_dump "$dump_file" "$container"
 }
 
