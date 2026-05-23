@@ -6,12 +6,12 @@
 # Author: ariushieu
 #
 # Usage: sudo bash setup_vps.sh [REPO_DIR]
-#   REPO_DIR: path to vps-config repo (default: ~/vps-config)
+#   REPO_DIR: path to vps-setup-kit repo (default: ~/vps-setup-kit)
 # ============================================================
 
 set -euo pipefail
 
-REPO_DIR="${1:-$HOME/vps-config}"
+REPO_DIR="${1:-$HOME/vps-setup-kit}"
 
 # -----------------------------------------------------------
 # Color & Log helpers
@@ -743,7 +743,7 @@ configure_timezone() {
     echo "    MYSQL_TZ_OFFSET=$tz_offset    # only needed if you use MySQL"
     echo ""
     log_warn "Then restart affected containers:"
-    echo "    cd ~/vps-config/projects/<your-project>"
+    echo "    cd ~/vps-setup-kit/projects/<your-project>"
     echo "    docker compose up -d --no-deps --force-recreate app    # app-only TZ change"
     echo "    docker compose up -d                                  # MYSQL_TZ_OFFSET change; restarts DB"
     echo ""

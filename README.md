@@ -5,7 +5,7 @@
 ## Repository Structure
 
 ```
-vps-config/
+vps-setup-kit/
 ├── scripts/
 │   ├── setup_vps.sh                  # Main VPS setup script
 │   ├── deploy_project.sh             # Interactive project deployment
@@ -40,17 +40,17 @@ vps-config/
 ### Step 1: Clone this repository
 
 ```bash
-git clone https://github.com/ariushieu/vps-config.git
-cd vps-config
+git clone https://github.com/ariushieu/vps-setup-kit.git
+cd vps-setup-kit
 ```
 
 ### Step 2: Run the setup script
 
 ```bash
 chmod +x scripts/setup_vps.sh
-sudo bash scripts/setup_vps.sh          # default: uses ~/vps-config
+sudo bash scripts/setup_vps.sh          # default: uses ~/vps-setup-kit
 # or specify repo path:
-sudo bash scripts/setup_vps.sh /opt/vps-config
+sudo bash scripts/setup_vps.sh /opt/vps-setup-kit
 ```
 
 > **⚠️ Reboot after upgrade:** If a kernel, systemd, or netplan update is detected,
@@ -60,7 +60,7 @@ sudo bash scripts/setup_vps.sh /opt/vps-config
 > ```bash
 > sudo reboot
 > # after reconnecting:
-> sudo bash ~/vps-config/scripts/setup_vps.sh
+> sudo bash ~/vps-setup-kit/scripts/setup_vps.sh
 > ```
 
 This script will automatically:
@@ -182,7 +182,7 @@ ls -lh /opt/backups/
 The setup script automatically installs a **daily cron job** at 02:00 AM:
 
 ```
-0 2 * * * /bin/bash '/root/vps-config/scripts/backup_db.sh' '/root/vps-config' >> '/var/log/backup_db.log' 2>&1
+0 2 * * * /bin/bash '/root/vps-setup-kit/scripts/backup_db.sh' '/root/vps-setup-kit' >> '/var/log/backup_db.log' 2>&1
 ```
 
 **How it works:**
@@ -257,7 +257,7 @@ sudo certbot --nginx -d your-domain.com
 
 ## CI/CD with GitHub Actions
 
-Each project template includes **CI/CD workflow files** (`ci.yml` + `cd.yml`). These are templates — copy them to your **project source code repo** (not this vps-config repo).
+Each project template includes **CI/CD workflow files** (`ci.yml` + `cd.yml`). These are templates — copy them to your **project source code repo** (not this vps-setup-kit repo).
 
 ### Setup
 
@@ -266,15 +266,15 @@ Each project template includes **CI/CD workflow files** (`ci.yml` + `cd.yml`). T
 mkdir -p .github/workflows
 
 # If you used deploy_project.sh, copy from the generated project folder:
-cp ~/vps-config/projects/mini-social-be/ci.yml .github/workflows/ci.yml
-cp ~/vps-config/projects/mini-social-be/cd.yml .github/workflows/cd.yml
+cp ~/vps-setup-kit/projects/mini-social-be/ci.yml .github/workflows/ci.yml
+cp ~/vps-setup-kit/projects/mini-social-be/cd.yml .github/workflows/cd.yml
 
 # If you are setting up manually, copy from the stack template instead:
-cp ~/vps-config/projects/example-spring-boot/ci.yml .github/workflows/ci.yml
-cp ~/vps-config/projects/example-spring-boot/cd.yml .github/workflows/cd.yml
+cp ~/vps-setup-kit/projects/example-spring-boot/ci.yml .github/workflows/ci.yml
+cp ~/vps-setup-kit/projects/example-spring-boot/cd.yml .github/workflows/cd.yml
 # or for Node.js:
-cp ~/vps-config/projects/example-node-app/ci.yml .github/workflows/ci.yml
-cp ~/vps-config/projects/example-node-app/cd.yml .github/workflows/cd.yml
+cp ~/vps-setup-kit/projects/example-node-app/ci.yml .github/workflows/ci.yml
+cp ~/vps-setup-kit/projects/example-node-app/cd.yml .github/workflows/cd.yml
 ```
 
 ### Replace placeholders
@@ -318,8 +318,8 @@ Push/merge to main     → CD: build → push to DockerHub → deploy to VPS
 ```
 my-project/                    ← your source code repo on GitHub
 ├── .github/workflows/
-│   ├── ci.yml                 ← copied from vps-config template
-│   └── cd.yml                 ← copied from vps-config template
+│   ├── ci.yml                 ← copied from vps-setup-kit template
+│   └── cd.yml                 ← copied from vps-setup-kit template
 ├── Dockerfile
 ├── src/
 └── ...
@@ -376,7 +376,7 @@ services:
 **To change timezone for an existing project:**
 
 ```bash
-cd ~/vps-config/projects/my-app
+cd ~/vps-setup-kit/projects/my-app
 nano .env                    # update TZ for app-only changes
 docker compose up -d --no-deps --force-recreate app
 

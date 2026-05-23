@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-REPO_DIR="${1:-$HOME/vps-config}"
+REPO_DIR="${1:-$HOME/vps-setup-kit}"
 PROJECTS_DIR="$REPO_DIR/projects"
 
 # -----------------------------------------------------------

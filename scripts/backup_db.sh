@@ -6,16 +6,16 @@
 #
 # Usage:
 #   sudo bash backup_db.sh [REPO_DIR]
-#   REPO_DIR: path to vps-config repo (default: ~/vps-config)
+#   REPO_DIR: path to vps-setup-kit repo (default: ~/vps-setup-kit)
 #
 # Cron example (daily at 2:00 AM):
-#   0 2 * * * /bin/bash '/root/vps-config/scripts/backup_db.sh' '/root/vps-config' >> '/var/log/backup_db.log' 2>&1
+#   0 2 * * * /bin/bash '/root/vps-setup-kit/scripts/backup_db.sh' '/root/vps-setup-kit' >> '/var/log/backup_db.log' 2>&1
 # ============================================================
 
 set -euo pipefail
 
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
-REPO_DIR="${1:-$HOME/vps-config}"
+REPO_DIR="${1:-$HOME/vps-setup-kit}"
 BACKUP_ROOT="/opt/backups"
 KEEP_DAYS=7
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
