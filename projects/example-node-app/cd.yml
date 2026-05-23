@@ -72,13 +72,22 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             set -eu
-            sleep 20
-            status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' <your-app-container-name>)
-            echo "Container status: $status"
-            if [ "$status" != "healthy" ] && [ "$status" != "running" ]; then
-              docker logs --tail=100 <your-app-container-name>
-              exit 1
-            fi
+            container=<your-app-container-name>
+            status=""
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              status=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$container" 2>/dev/null || echo "missing")
+              echo "Attempt $i: $status"
+              if [ "$status" = "healthy" ] || [ "$status" = "running" ]; then
+                exit 0
+              fi
+              if [ "$status" = "exited" ] || [ "$status" = "dead" ] || [ "$status" = "missing" ]; then
+                break
+              fi
+              sleep 6
+            done
+            echo "Final container status: $status"
+            docker logs --tail=200 "$container" || true
+            exit 1
 
       # --- Cleanup ---
       - name: Clean up old Docker images
