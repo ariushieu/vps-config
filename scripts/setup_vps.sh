@@ -235,24 +235,30 @@ configure_docker_logging() {
     log_info "Configuring Docker log rotation..."
     mkdir -p /etc/docker
 
+    local backup_file=""
     if [[ -f "$DAEMON_JSON" ]]; then
-        cp "$DAEMON_JSON" "${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"
+        backup_file="${DAEMON_JSON}.bak.$(date +%Y%m%d%H%M%S)"
+        cp "$DAEMON_JSON" "$backup_file"
     fi
 
     if command -v python3 &>/dev/null; then
-        python3 - "$DAEMON_JSON" <<'PY'
+        local merge_status
+        merge_status=$(python3 - "$DAEMON_JSON" <<'PY'
 import json
 import pathlib
 import sys
 
 path = pathlib.Path(sys.argv[1])
+parsed_ok = True
 try:
     data = json.loads(path.read_text()) if path.exists() and path.stat().st_size else {}
 except json.JSONDecodeError:
     data = {}
+    parsed_ok = False
 
 if not isinstance(data, dict):
     data = {}
+    parsed_ok = False
 
 opts = data.get("log-opts")
 if not isinstance(opts, dict):
@@ -263,7 +269,15 @@ opts["max-file"] = "3"
 data["log-driver"] = "json-file"
 data["log-opts"] = opts
 path.write_text(json.dumps(data, indent=2) + "\n")
+print("ok" if parsed_ok else "reset")
 PY
+        )
+        if [[ "$merge_status" == "reset" ]]; then
+            log_warn "Existing $DAEMON_JSON was unparseable; wrote a fresh config."
+            if [[ -n "$backup_file" ]]; then
+                log_warn "Previous contents preserved at: $backup_file"
+            fi
+        fi
     else
         cat > "$DAEMON_JSON" <<'DOCKER_CONF'
 {

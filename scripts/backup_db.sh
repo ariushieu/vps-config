@@ -281,10 +281,6 @@ container_belongs_to_project() {
     local project_dir="$3"
     local compose_file="$4"
 
-    if grep -qF "$container" "$compose_file" 2>/dev/null; then
-        return 0
-    fi
-
     local label_project label_working_dir label_config_files
     label_project=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project" }}' 2>/dev/null || true)
     label_working_dir=$(docker inspect "$container" --format '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' 2>/dev/null || true)
@@ -304,6 +300,13 @@ container_belongs_to_project() {
     fi
 
     if [[ -n "$label_config_files" && "$label_config_files" != "<no value>" && "$label_config_files" == *"$compose_file"* ]]; then
+        return 0
+    fi
+
+    # Fallback: match the literal container_name: field in compose file.
+    # We anchor the regex to the YAML key so arbitrary occurrences (image, service
+    # name, networks) cannot false-match.
+    if grep -Eq "^[[:space:]]*container_name:[[:space:]]*[\"']?${container}[\"']?[[:space:]]*$" "$compose_file" 2>/dev/null; then
         return 0
     fi
 
