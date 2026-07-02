@@ -20,8 +20,6 @@ services:
     depends_on:
       mongo:
         condition: service_healthy
-    networks:
-      - backend-network
     mem_limit: 512m
     cpus: 1.0
     logging:
@@ -41,15 +39,15 @@ services:
       MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
     volumes:
       - /opt/data/<your-project-name>/mongo:/data/db          # e.g. /opt/data/my-api/mongo
-    ports:
-      - "127.0.0.1:27017:27017"                              # loopback only — never expose DB to internet
+    # No host port published — the app reaches MongoDB over the project's private
+    # Compose network. To connect a GUI/CLI from the host, use docker exec or an
+    # SSH tunnel (see README "Accessing the database"). Publishing 127.0.0.1:27017
+    # here would collide across projects and widen the attack surface.
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - backend-network
     mem_limit: 512m
     cpus: 0.5
     logging:
@@ -58,6 +56,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-networks:
-  backend-network:
-    external: true
+# Each project gets its own default Compose network (named "<project>_default").
+# We deliberately do NOT share a single external network across projects: a shared
+# network makes the "mysql"/"mongo" service alias resolve to every project's DB,
+# so an app could connect to the wrong project's database.

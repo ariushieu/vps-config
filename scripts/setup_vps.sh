@@ -11,7 +11,12 @@
 
 set -euo pipefail
 
-REPO_DIR="${1:-$HOME/vps-setup-kit}"
+# Default REPO_DIR to the repo this script lives in — correct no matter which
+# user cloned it or where. The old default ($HOME/vps-setup-kit) broke under
+# `sudo bash` from a non-root clone: sudo sets HOME=/root, so the script
+# guessed /root/vps-setup-kit and silently skipped nginx linking + backup cron.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${1:-$(dirname "$SCRIPT_DIR")}"
 
 # -----------------------------------------------------------
 # Color & Log helpers
@@ -128,19 +133,22 @@ setup_fastest_mirror() {
             return 0
         fi
 
-        # Detect apt source format: DEB822 (noble+) or classic sources.list
+        # Detect apt source format: DEB822 (noble+) or classic sources.list.
+        # The `/security\.ubuntu\.com/!` guard leaves the security stanza on its
+        # dedicated host — mirrors don't always carry -security, and we don't want
+        # to slow down or break security patch delivery.
         local deb822="/etc/apt/sources.list.d/ubuntu.sources"
         if [[ -f "$deb822" ]]; then
             cp "$deb822" "${deb822}.bak"
             # DEB822 format uses "URIs: http://..."
-            sed -i -E "s|URIs: http://[^ ]+/ubuntu/?|URIs: ${fastest_mirror}|g" "$deb822"
+            sed -i -E "/security\.ubuntu\.com/! s|URIs: http://[^ ]+/ubuntu/?|URIs: ${fastest_mirror}|g" "$deb822"
             log_info "Updated DEB822 source: $deb822"
         fi
 
         # Also update classic sources.list if it has real entries
         if [[ -f /etc/apt/sources.list ]] && grep -qE '^deb ' /etc/apt/sources.list 2>/dev/null; then
             cp /etc/apt/sources.list /etc/apt/sources.list.bak
-            sed -i -E "s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
+            sed -i -E "/security\.ubuntu\.com/! s|http://[^ ]+/ubuntu|${fastest_mirror}|g" /etc/apt/sources.list
             log_info "Updated classic source: /etc/apt/sources.list"
         fi
 
@@ -160,8 +168,33 @@ update_system() {
     setup_fastest_mirror
 
     if ! apt update 2>&1; then
-        log_warn "apt update failed. Falling back to archive.ubuntu.com..."
-        sed -i -E 's|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list
+        log_warn "apt update failed. Reverting to the original mirror config..."
+
+        # Prefer restoring the pre-change backups written by setup_fastest_mirror.
+        # This covers both DEB822 (noble+) and classic sources.list, and keeps the
+        # security stanza intact. Only if no backup exists do we rewrite to
+        # archive.ubuntu.com as a last resort.
+        local deb822="/etc/apt/sources.list.d/ubuntu.sources"
+        local reverted=0
+        if [[ -f "${deb822}.bak" ]]; then
+            cp "${deb822}.bak" "$deb822"
+            reverted=1
+        fi
+        if [[ -f /etc/apt/sources.list.bak ]]; then
+            cp /etc/apt/sources.list.bak /etc/apt/sources.list
+            reverted=1
+        fi
+
+        if [[ "$reverted" -eq 0 ]]; then
+            log_warn "No mirror backup found. Rewriting to archive.ubuntu.com..."
+            if [[ -f "$deb822" ]]; then
+                sed -i -E "/security\.ubuntu\.com/! s|URIs: http://[^ ]+/ubuntu/?|URIs: http://archive.ubuntu.com/ubuntu|g" "$deb822"
+            fi
+            if [[ -f /etc/apt/sources.list ]]; then
+                sed -i -E "/security\.ubuntu\.com/! s|http://[^ ]+/ubuntu|http://archive.ubuntu.com/ubuntu|g" /etc/apt/sources.list
+            fi
+        fi
+
         apt update
     fi
 
@@ -332,25 +365,10 @@ install_docker_compose() {
 }
 
 # -----------------------------------------------------------
-# 4. Create Docker network
-# -----------------------------------------------------------
-create_docker_network() {
-    log_section "Step 4: Creating Docker Network"
-
-    if docker network ls | grep -q "backend-network"; then
-        log_warn "Docker network 'backend-network' already exists. Skipping."
-        return 0
-    fi
-
-    docker network create backend-network
-    log_info "Docker network 'backend-network' created."
-}
-
-# -----------------------------------------------------------
-# 5. Configure SWAP (2GB, swappiness=10)
+# 4. Configure SWAP (2GB, swappiness=10)
 # -----------------------------------------------------------
 configure_swap() {
-    log_section "Step 5: Configuring SWAP (2GB)"
+    log_section "Step 4: Configuring SWAP (2GB)"
 
     local SWAPFILE="/swapfile"
     local SWAP_SIZE="2G"
@@ -394,10 +412,10 @@ configure_swap() {
 }
 
 # -----------------------------------------------------------
-# 6. Setup Firewall (UFW)
+# 5. Setup Firewall (UFW)
 # -----------------------------------------------------------
 setup_firewall() {
-    log_section "Step 6: Setting up Firewall (UFW)"
+    log_section "Step 5: Setting up Firewall (UFW)"
 
     # Install UFW if not present
     if ! command -v ufw &>/dev/null; then
@@ -448,10 +466,10 @@ setup_firewall() {
 }
 
 # -----------------------------------------------------------
-# 6b. Install Fail2Ban (brute-force protection)
+# 5b. Install Fail2Ban (brute-force protection)
 # -----------------------------------------------------------
 install_fail2ban() {
-    log_section "Step 6b: Installing Fail2Ban"
+    log_section "Step 5b: Installing Fail2Ban"
 
     if command -v fail2ban-server &>/dev/null; then
         log_warn "Fail2Ban is already installed. Skipping."
@@ -474,10 +492,14 @@ maxretry = 5
 enabled = true
 port    = ssh
 filter  = sshd
-logpath = /var/log/auth.log
+# Read SSH auth events from the systemd journal. Ubuntu 24.04 (noble) ships
+# journald-only by default and has no /var/log/auth.log, so a file-based
+# logpath would silently match nothing and the jail would never ban.
+# Scoped to this jail so the file-based nginx jail keeps its own backend.
+backend  = systemd
 maxretry = 3
 JAIL
-        log_info "Fail2Ban jail.local created (SSH: 3 retries, ban 1h)."
+        log_info "Fail2Ban jail.local created (SSH: 3 retries, ban 1h, systemd backend)."
     fi
 
     # Create Nginx rate-limit jail (ban bots that trigger limit_req)
@@ -504,10 +526,10 @@ NGINXJAIL
 }
 
 # -----------------------------------------------------------
-# 7. Install Nginx & Certbot
+# 6. Install Nginx & Certbot
 # -----------------------------------------------------------
 install_nginx_certbot() {
-    log_section "Step 7: Installing Nginx & Certbot"
+    log_section "Step 6: Installing Nginx & Certbot"
 
     if command -v nginx &>/dev/null; then
         log_warn "Nginx is already installed: $(nginx -v 2>&1). Skipping install."
@@ -532,10 +554,10 @@ install_nginx_certbot() {
 }
 
 # -----------------------------------------------------------
-# 8. Auto-link Nginx configs from projects/
+# 7. Auto-link Nginx configs from projects/
 # -----------------------------------------------------------
 link_nginx_configs() {
-    log_section "Step 8: Linking Nginx Configs"
+    log_section "Step 7: Linking Nginx Configs"
 
     local PROJECTS_DIR="$REPO_DIR/projects"
 
@@ -590,10 +612,10 @@ link_nginx_configs() {
 }
 
 # -----------------------------------------------------------
-# 9. Prepare data volume directories for Docker bind mounts
+# 8. Prepare data volume directories for Docker bind mounts
 # -----------------------------------------------------------
 prepare_data_volumes() {
-    log_section "Step 9: Preparing Data Volume Directories"
+    log_section "Step 8: Preparing Data Volume Directories"
 
     local PROJECTS_DIR="$REPO_DIR/projects"
 
@@ -639,10 +661,10 @@ prepare_data_volumes() {
 }
 
 # -----------------------------------------------------------
-# 10. Setup daily database backup cron job
+# 9. Setup daily database backup cron job
 # -----------------------------------------------------------
 setup_backup_cron() {
-    log_section "Step 10: Setting up Daily Database Backup"
+    log_section "Step 9: Setting up Daily Database Backup"
 
     local BACKUP_SCRIPT="$REPO_DIR/scripts/backup_db.sh"
     local RESTORE_SCRIPT="$REPO_DIR/scripts/restore_mysql.sh"
@@ -687,10 +709,10 @@ setup_backup_cron() {
 }
 
 # -----------------------------------------------------------
-# 11. Configure timezone
+# 10. Configure timezone
 # -----------------------------------------------------------
 configure_timezone() {
-    log_section "Step 11: Configuring Timezone"
+    log_section "Step 10: Configuring Timezone"
 
     local current_tz
     current_tz=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "unknown")
@@ -755,7 +777,7 @@ configure_timezone() {
 }
 
 # -----------------------------------------------------------
-# 12. Summary
+# 11. Summary
 # -----------------------------------------------------------
 print_summary() {
     log_section "Setup Complete!"
@@ -787,7 +809,7 @@ print_summary() {
 # -----------------------------------------------------------
 # MAIN
 # -----------------------------------------------------------
-TOTAL_STEPS=12
+TOTAL_STEPS=11
 CURRENT_STEP=0
 SCRIPT_START=$(date +%s)
 
@@ -816,7 +838,6 @@ main() {
     run_step update_system         "Update & upgrade system"
     run_step install_docker        "Install Docker"
     run_step install_docker_compose "Install Docker Compose"
-    run_step create_docker_network "Create Docker network"
     run_step configure_swap        "Configure SWAP (2GB)"
     run_step setup_firewall        "Setup Firewall (UFW)"
     run_step install_fail2ban      "Install Fail2Ban"

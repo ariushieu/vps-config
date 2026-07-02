@@ -14,8 +14,18 @@
 
 set -euo pipefail
 
+# Database dumps contain the full application dataset. Restrict everything this
+# script creates to the owner (root): dirs -> 700, files -> 600. Without this,
+# mkdir/gzip/tar would fall back to the default umask and leave world-readable
+# (0644) dumps under /opt/backups that any local user could read.
+umask 077
+
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
-REPO_DIR="${1:-$HOME/vps-setup-kit}"
+# Default REPO_DIR to the repo this script lives in. The cron line passes it
+# explicitly, but manual runs previously guessed $HOME/vps-setup-kit, which is
+# wrong when invoked via sudo from a non-root user's clone (HOME=/root).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${1:-$(dirname "$SCRIPT_DIR")}"
 BACKUP_ROOT="/opt/backups"
 KEEP_DAYS=7
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
@@ -340,6 +350,8 @@ run_backups() {
     fi
 
     mkdir -p "$BACKUP_ROOT"
+    # Enforce owner-only even if the dir pre-dates the umask hardening above.
+    chmod 700 "$BACKUP_ROOT"
 
     local backup_count=0
 

@@ -20,8 +20,6 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-    networks:
-      - backend-network
     mem_limit: 512m
     cpus: 1.0
     logging:
@@ -43,15 +41,19 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - /opt/data/<your-project-name>/mysql:/var/lib/mysql    # e.g. /opt/data/mini-social-be/mysql
-    ports:
-      - "127.0.0.1:3306:3306"                                # loopback only — never expose DB to internet
+    # No host port published — the app reaches MySQL over the project's private
+    # Compose network. To connect a GUI/CLI from the host, use docker exec or an
+    # SSH tunnel (see README "Accessing the database"). Publishing 127.0.0.1:3306
+    # here would collide across projects and widen the attack surface.
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # Ping over TCP (127.0.0.1), NOT the socket: during first-boot init the
+      # mysql:8 entrypoint runs a temporary server with networking disabled but
+      # the socket live, so a socket ping reports "healthy" before the real
+      # server is up and the app starts too early and fails to connect.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - backend-network
     mem_limit: 512m
     cpus: 0.5
     logging:
@@ -60,6 +62,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-networks:
-  backend-network:
-    external: true
+# Each project gets its own default Compose network (named "<project>_default").
+# We deliberately do NOT share a single external network across projects: a shared
+# network makes the "mysql"/"mongo" service alias resolve to every project's DB,
+# so an app could connect to the wrong project's database.

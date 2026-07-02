@@ -70,21 +70,24 @@ This script will automatically:
 | 1 | Update system | `apt update && apt upgrade` |
 | 2 | Install Docker | Official Docker install script |
 | 3 | Install Docker Compose | Docker Compose **V2** plugin (`docker compose`) with `docker-compose` symlink for back-compat |
-| 4 | Create Docker network | `backend-network` for inter-container communication |
-| 5 | Configure SWAP | 2GB swap file, swappiness = 10 |
-| 6 | Setup Firewall (UFW) | Default deny incoming, allow 22, 80, 443 |
-| 7 | Install Fail2Ban | SSH brute-force protection (3 retries → ban 1h) |
-| 8 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
-| 9 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
-| 10 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
-| 11 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
-| 12 | Configure timezone | Interactive timezone selection (VN, SG, JP, US, UK, UTC, or keep current) |
+| 4 | Configure SWAP | 2GB swap file, swappiness = 10 |
+| 5 | Setup Firewall (UFW) | Default deny incoming, allow 22, 80, 443 |
+| 6 | Install Fail2Ban | SSH brute-force protection (3 retries → ban 1h) |
+| 7 | Install Nginx & Certbot | Reverse proxy + automatic SSL |
+| 8 | Link Nginx configs | Auto-symlink `nginx.conf` from each project to sites-enabled |
+| 9 | Prepare data volumes | Auto-create `/opt/data/<project>/` directories for bind mounts |
+| 10 | Setup backup cron | Daily DB backup at 02:00 AM, keep last 7 days |
+| 11 | Configure timezone | Interactive timezone selection (VN, SG, JP, US, UK, UTC, or keep current) |
+
+> Each project gets its **own private Compose network** (`<project>_default`). The kit deliberately
+> does not create a single shared Docker network — sharing one would make the `mysql`/`mongo`
+> service alias resolve to every project's database, so an app could connect to the wrong DB.
 
 > **⚠️ Non-standard SSH port:** Some VPS providers use custom SSH ports (e.g. 8686 instead of 22).
 > The script **auto-detects your SSH port** and opens it in UFW, so you won't get locked out.
 
 > **⚠️ Container timezone:** Host timezone does **NOT** propagate into Docker containers.
-> After Step 12, the script prints the two lines you need to add to each project's `.env`:
+> After Step 11, the script prints the two lines you need to add to each project's `.env`:
 >
 > ```
 > TZ=Asia/Ho_Chi_Minh
@@ -339,6 +342,34 @@ All persistent data is stored under `/opt/data/<project-name>/`:
 
 This makes backup, migration, and cleanup straightforward.
 
+## Accessing the database
+
+The database containers **do not publish a host port** — nothing listens on
+`127.0.0.1:3306` / `:27017` on the VPS. This removes a needless attack surface and
+avoids port collisions between projects. The app talks to the DB over the project's
+private Compose network using the service alias (`mysql` / `mongo`).
+
+When you need a shell or a GUI against the DB:
+
+```bash
+# MySQL shell inside the container
+docker exec -it <project>-db mysql -u root -p
+
+# MongoDB shell inside the container
+docker exec -it <project>-db mongosh -u "$MONGO_USERNAME" -p
+
+# GUI tool (DBeaver, Compass, TablePlus) from your laptop — tunnel over SSH.
+# This forwards local 3307 -> the DB *inside* the container via the VPS.
+# Because there is no published port, point the tunnel at the container IP,
+# or temporarily publish the port for a one-off session:
+ssh -L 3307:127.0.0.1:3306 user@your-vps      # only works if you publish the port
+```
+
+If you genuinely need the port published for a debugging session, add a temporary
+`ports: ["127.0.0.1:3306:3306"]` back to that one project's `docker-compose.yml`,
+`docker compose up -d`, and remove it when done. Keep it **loopback-only** (`127.0.0.1:`)
+and never `0.0.0.0`.
+
 ## Timezone handling
 
 Host and container timezones are **independent**. Setting `timedatectl set-timezone` on the host
@@ -388,7 +419,8 @@ docker compose up -d --no-deps --force-recreate app
 
 This repo follows security best practices:
 
-- **Ports**: App & DB bind to `127.0.0.1` only — not reachable from internet
+- **Ports**: The app binds to `127.0.0.1:<port>` (Nginx proxies to it); the **database publishes no host port at all** — it is reachable only over the project's private Compose network. Neither is reachable from the internet.
+- **Network isolation**: Each project runs on its own `<project>_default` network, so one project's app can't reach another project's database.
 - **Firewall**: UFW `default deny incoming`, only 22/80/443 open
 - **Fail2Ban**: SSH brute-force protection (3 retries → ban 1h) + Nginx rate-limit jail (5 violations in 10m → ban 1h via UFW)
 - **Nginx**: Security headers, rate limiting (`burst=30 nodelay`), `server_tokens off`, malicious scan blocker (`.env`, `.git`, `.ssh`, `.php`, `.sql`, `.bak` → instant `444` drop)

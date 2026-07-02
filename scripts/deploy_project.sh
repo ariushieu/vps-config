@@ -9,7 +9,10 @@
 
 set -euo pipefail
 
-REPO_DIR="${1:-$HOME/vps-setup-kit}"
+# Default REPO_DIR to the repo this script lives in (see setup_vps.sh — the
+# $HOME-based default broke under `sudo bash` from a non-root user's clone).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${1:-$(dirname "$SCRIPT_DIR")}"
 PROJECTS_DIR="$REPO_DIR/projects"
 
 # -----------------------------------------------------------
@@ -58,6 +61,17 @@ ask_project_name() {
 
     # Sanitize: lowercase, replace spaces with dashes
     PROJECT_NAME=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
+
+    # Whitelist the result. PROJECT_NAME is later interpolated into rm -rf,
+    # sed replacement strings, and a docker network name, so anything outside
+    # [a-z0-9-] (especially '/', '..', '|', ';') is a path-traversal / injection
+    # footgun. Reject rather than silently strip so the user picks a clean name.
+    if [[ ! "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+        log_error "Invalid project name: '$PROJECT_NAME'"
+        log_error "Use lowercase letters, digits and dashes only (must start with a letter or digit)."
+        exit 1
+    fi
+
     PROJECT_DIR="$PROJECTS_DIR/$PROJECT_NAME"
 
     if [[ -d "$PROJECT_DIR" ]]; then
@@ -86,18 +100,34 @@ ask_domain() {
         exit 1
     fi
 
+    # DOMAIN is written verbatim into the generated nginx.conf (server_name,
+    # ssl_certificate paths) and passed to certbot -d. Restrict it to a valid
+    # hostname so a stray ';', '{', space, or newline can't inject an nginx
+    # directive or an extra certbot argument.
+    if [[ ! "$DOMAIN" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$ ]]; then
+        log_error "Invalid domain: '$DOMAIN'"
+        log_error "Expected a hostname like api.example.com (letters, digits, dots, dashes)."
+        exit 1
+    fi
+
     log_info "Domain: $DOMAIN"
 
     # Verify DNS points to this server
     local server_ip
     server_ip=$(curl -s ifconfig.me 2>/dev/null || echo "unknown")
-    local domain_ip
-    domain_ip=$(dig +short "$DOMAIN" 2>/dev/null | tail -1 || echo "unresolved")
+    # Resolve to A records only. `dig +short` on a CNAME prints the chased
+    # hostname(s) before the final IP, so `tail -1` (the old approach) is right
+    # only by luck; `dig A +short <name>` restricts output to IPv4 addresses.
+    # We then check whether the server IP is among them (not just the last line).
+    local domain_ips
+    domain_ips=$(dig +short "$DOMAIN" A 2>/dev/null | grep -E '^[0-9]+(\.[0-9]+){3}$' || true)
 
-    if [[ "$server_ip" == "$domain_ip" ]]; then
+    if [[ -n "$domain_ips" ]] && grep -qxF "$server_ip" <<< "$domain_ips"; then
         log_info "DNS OK: $DOMAIN -> $server_ip"
     else
-        log_warn "DNS mismatch: $DOMAIN -> $domain_ip (this server: $server_ip)"
+        local domain_ip
+        domain_ip=$(tr '\n' ' ' <<< "${domain_ips:-unresolved}")
+        log_warn "DNS mismatch: $DOMAIN -> ${domain_ip:-unresolved} (this server: $server_ip)"
         log_warn "Certbot may fail if DNS is not pointed to this server."
         prompt "Continue anyway? (y/N): "
         read -r CONTINUE
@@ -149,13 +179,20 @@ choose_template() {
 # -----------------------------------------------------------
 detect_app_port() {
     local compose_tpl="$PROJECTS_DIR/$TEMPLATE/docker-compose.yml"
-    # Extract the first host port from 127.0.0.1:XXXX:YYYY
+    # Extract the first host port from a published binding line: - "127.0.0.1:XXXX:YYYY".
+    # The pattern is anchored to the YAML list item ('- "') so it can't match a
+    # "127.0.0.1:3306" that merely appears inside a comment.
+    local port_re='^\s*-\s*"?127\.0\.0\.1:\K\d+'
     local default_port
-    default_port=$(grep -oP '127\.0\.0\.1:\K\d+' "$compose_tpl" | head -1 || echo "8080")
+    default_port=$(grep -oP "$port_re" "$compose_tpl" | head -1 || echo "8080")
 
-    # Find the next available port by scanning existing projects
+    # Find the next available port by scanning existing projects.
+    # NOTE: this grep needs -P — the pattern uses PCRE (\K, \d). Previously it ran
+    # with plain -ho, so \K matched nothing, used_ports was always empty, and the
+    # auto-increment below never fired — every project reused the template's
+    # default port and the 2nd same-stack project collided on 127.0.0.1:<port>.
     local used_ports
-    used_ports=$(find "$PROJECTS_DIR" -name "docker-compose.yml" -not -path "*/example-*" -print0 | xargs -0 grep -ho '127\.0\.0\.1:\K\d+' 2>/dev/null | sort -n | uniq || true)
+    used_ports=$(find "$PROJECTS_DIR" -name "docker-compose.yml" -not -path "*/example-*" -print0 | xargs -0 grep -hoP "$port_re" 2>/dev/null | sort -n | uniq || true)
 
     APP_PORT="$default_port"
     if [[ -n "$used_ports" ]]; then
@@ -200,6 +237,11 @@ ask_timezone() {
     prompt "Choose timezone [1-10]: "
     read -r TZ_CHOICE
 
+    # NOTE: MYSQL_TZ_OFFSET is a fixed offset — MySQL's --default-time-zone
+    # does not follow DST transitions. For DST zones (New_York, LA, London,
+    # Berlin) the standard-time offset below is wrong half the year. If your
+    # data is DST-sensitive, load MySQL's tz tables and use the IANA name, or
+    # just keep the database itself on UTC.
     case "$TZ_CHOICE" in
         1)  TZ="Asia/Ho_Chi_Minh"      MYSQL_TZ_OFFSET="+07:00" ;;
         2)  TZ="Asia/Bangkok"          MYSQL_TZ_OFFSET="+07:00" ;;
@@ -286,7 +328,15 @@ server {
     client_max_body_size 10M;
 
     # --- Block malicious scans (before location / to avoid consuming rate-limit quota) ---
-    location ~ /\.(env|git|ssh|docker|config|php|sql|bak) {
+    # Dotfiles/dirs: /.env, /.git/config, /.ssh/id_rsa, ...
+    location ~ /\.(env|git|ssh|docker|config) {
+        access_log off;
+        log_not_found off;
+        return 444;
+    }
+    # Scanner extensions: /index.php, /backup.sql, /db.bak, ... (the old
+    # dotfile-only regex missed these — /\.php only matched a literal "/.php")
+    location ~* \.(php|sql|bak)$ {
         access_log off;
         log_not_found off;
         return 444;
@@ -362,8 +412,26 @@ setup_ssl() {
         return 0
     fi
 
+    # Ask for an email so Let's Encrypt can warn about expiry / renewal failures.
+    # Registering without one (--register-unsafely-without-email) means no such
+    # notifications — you only find out a cert lapsed when the site breaks.
+    prompt "Email for Let's Encrypt expiry notices (blank = register without email): "
+    read -r LE_EMAIL
+
+    local -a certbot_reg_args
+    if [[ -n "$LE_EMAIL" ]]; then
+        if [[ ! "$LE_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]]; then
+            log_error "Invalid email: '$LE_EMAIL'"
+            exit 1
+        fi
+        certbot_reg_args=(--email "$LE_EMAIL")
+    else
+        log_warn "No email given — registering without expiry notifications."
+        certbot_reg_args=(--register-unsafely-without-email)
+    fi
+
     log_info "Running Certbot for $DOMAIN ..."
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email || {
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos "${certbot_reg_args[@]}" || {
         log_warn "Certbot failed. You can retry manually:"
         log_warn "  sudo certbot --nginx -d $DOMAIN"
         return 0
